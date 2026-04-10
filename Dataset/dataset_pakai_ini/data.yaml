@@ -1,0 +1,5 @@
+names:
+  0: TBM
+path: D:\Gawean Rebinmas\Tree Counting Project\Training Deteksi Sawit Multi Model\Dataset\dataset_pakai_ini
+train: images/train
+val: images/val

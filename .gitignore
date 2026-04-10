@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large files
+*.tif
+*.tiff
+*.png
+*.jpg
+*.jpeg
+
+# Dataset (optional - uncomment if you don't want to push dataset)
+# Dataset/
+
+# Weights
+*.pt
+*.onnx
+*.engine
