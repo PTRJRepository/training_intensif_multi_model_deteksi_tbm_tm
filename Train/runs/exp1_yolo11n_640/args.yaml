@@ -2,7 +2,7 @@ task: detect
 mode: train
 model: yolo11n.pt
 data: D:\Server\Services\train_tbm_tm\training_intensif_multi_model_deteksi_tbm_tm\Dataset\dataset_pakai_ini\data.yaml
-epochs: 100
+epochs: 300
 time: null
 patience: 50
 batch: 4
