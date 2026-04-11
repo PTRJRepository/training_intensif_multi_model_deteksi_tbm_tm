@@ -29,7 +29,7 @@ class DatasetConfig:
 
     # Image settings
     img_size: int = 640  # Training image size (multiple of 32)
-    cache_images: bool = False  # Cache images in RAM (needs large RAM)
+    cache_images: bool = True  # Cache images in RAM for faster training (enough RAM available)
 
     def __post_init__(self):
         if self.data_yaml is None:
@@ -40,13 +40,13 @@ class DatasetConfig:
 class TrainingConfig:
     """Training hyperparameters - optimized for small object detection."""
     # Core settings
-    epochs: int = 150
-    batch: int = 8  # Lower batch for CPU
+    epochs: int = 100  # Reduced from 150 for faster CPU training
+    batch: int = 4  # Lower batch for CPU (reduced from 8)
     device: str = 'cpu'  # CPU only
 
     # Optimizer settings (focus on convergence for small objects)
-    optimizer: Literal['SGD', 'Adam', 'AdamW'] = 'AdamW'
-    lr0: float = 0.01  # Initial learning rate
+    optimizer: Literal['SGD', 'Adam', 'AdamW'] = 'Adam'
+    lr0: float = 0.001  # Initial learning rate (reduced from 0.01 for stability)
     lrf: float = 0.01  # Final learning rate (lr0 * lrf)
     momentum: float = 0.937
     weight_decay: float = 0.0005
@@ -71,7 +71,7 @@ class TrainingConfig:
     close_mosaic: int = 10  # Disable mosaic for last N epochs
 
     # Other
-    workers: int = 4  # Data loading workers (lower for CPU)
+    workers: int = 8  # Data loading workers (increased for better CPU utilization)
     patience: int = 50  # Early stopping patience
     save_period: int = 10  # Save checkpoint every N epochs
     resume: bool = False  # Resume from last checkpoint

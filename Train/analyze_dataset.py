@@ -11,8 +11,15 @@ from collections import defaultdict
 import cv2
 import numpy as np
 import rasterio
-import geopandas as gpd
 from tqdm import tqdm
+
+# Optional: geospatial libraries for shapefile analysis
+try:
+    import geopandas as gpd
+    HAS_GEOPANDAS = True
+except ImportError:
+    HAS_GEOPANDAS = False
+    gpd = None
 
 
 def parse_args():
@@ -25,6 +32,10 @@ def parse_args():
 def analyze_shapefile(shapefile_path):
     """Analyze shapefile annotations."""
     print(f"\n[INFO] Analyzing shapefile: {shapefile_path}")
+
+    if not HAS_GEOPANDAS:
+        print(f"[SKIP] geopandas not installed. Install with: pip install geopandas (requires GDAL)")
+        return None
 
     gdf = gpd.read_file(shapefile_path)
 
