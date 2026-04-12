@@ -195,11 +195,11 @@ def main():
     # Then copy results back to original location
     original_save_dir = Path(project_cfg.save_dir)
     original_exp_name = str(project_cfg.experiment_name).replace('\\', '/')
-    
-    # Short training path: D:\tmp_train
+
+    # Short training path: D:\tmp_train (avoids Windows 260 char limit)
     short_train_dir = Path('D:/tmp_train')
     short_train_dir.mkdir(parents=True, exist_ok=True)
-    
+
     print(f"\n[INFO] Starting training...")
     print(f"[INFO] Training dir (temp): {short_train_dir}")
     print(f"[INFO] Final output: {original_save_dir / original_exp_name}")
@@ -208,20 +208,53 @@ def main():
     # Train with short path
     train_args['project'] = str(short_train_dir).replace('\\', '/')
     train_args['name'] = str(project_cfg.experiment_name).replace('\\', '/')
-    
-    results = model.train(**train_args)
-    
+    train_args['save_period'] = -1  # Disable saves during training
+    train_args['patience'] = 0  # Disable early stopping - FORCE FULL TRAINING
+
+    try:
+        results = model.train(**train_args)
+    except Exception as e:
+        print(f"\n[ERROR] Training failed: {e}")
+        # Cleanup on error
+        try:
+            shutil.rmtree(short_train_dir)
+        except Exception:
+            pass
+        raise
+
+    # Manual save after training completes using YOLO's native save method
+    weights_dir = short_train_dir / original_exp_name / 'weights'
+    weights_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save best and last model
+    best_path = weights_dir / 'best.pt'
+    last_path = weights_dir / 'last.pt'
+
+    print(f"\n[INFO] Saving model...")
+    try:
+        model.save(str(last_path))
+        model.save(str(best_path))
+        print(f"[INFO] Model saved successfully!")
+    except Exception as e:
+        print(f"[ERROR] Failed to save model: {e}")
+        # Try alternative save method
+        print(f"[INFO] Trying alternative save method...")
+        import torch
+        torch.save({'model': model.model}, str(best_path))
+        torch.save({'model': model.model}, str(last_path))
+        print(f"[INFO] Model saved with alternative method!")
+
     # Copy results back to original location
     src_dir = short_train_dir / original_exp_name
     dst_dir = original_save_dir / original_exp_name
-    
+
     if src_dir.exists():
         # Remove old results if exist
         if dst_dir.exists():
             shutil.rmtree(dst_dir)
-        shutil.copytree(src_dir, dst_dir)
+        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
         print(f"\n[INFO] Results copied to: {dst_dir}")
-        
+
         # Cleanup temp
         try:
             shutil.rmtree(short_train_dir)
