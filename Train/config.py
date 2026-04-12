@@ -99,6 +99,12 @@ class ProjectConfig:
     save_dir: Path = Path(__file__).parent / "runs"
     exist_ok: bool = True  # Overwrite existing
 
+    def __post_init__(self):
+        # Convert to forward slashes for Windows compatibility
+        save_str = str(self.save_dir).replace('\\', '/')
+        self.save_dir = Path(save_str)
+        self.experiment_name = str(self.experiment_name).replace('\\', '/')
+
 
 def get_config() -> tuple:
     """Get all configurations."""

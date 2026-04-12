@@ -1,0 +1,88 @@
+{
+  "analysis_date": "2026-04-11T08:57:52.886245",
+  "dataset_stats": {
+    "train_images": 17,
+    "val_images": 6,
+    "train_tiles": 17,
+    "val_tiles": 6,
+    "total_trees_train": 5430,
+    "total_trees_val": 2501,
+    "avg_trees_per_tile_train": 319.4117647058824
+  },
+  "training_stats": {
+    "weights_dir": "D:/Server/Services/train_tbm_tm/training_intensif_multi_model_deteksi_tbm_tm/Train/runs/exp1_yolo11n_640/weights",
+    "last_exists": true,
+    "best_exists": true,
+    "last_size_mb": 20.26486301422119
+  },
+  "issues": [
+    {
+      "severity": "CRITICAL",
+      "code": "TINY_DATASET",
+      "description": "Only 17 training tiles - very small dataset",
+      "impact": "Model has limited examples to learn from"
+    },
+    {
+      "severity": "CRITICAL",
+      "code": "SMALL_OBJECTS",
+      "description": "BBox ~10px - YOLO struggles with <16px objects",
+      "impact": "Detection accuracy inherently limited by object size"
+    },
+    {
+      "severity": "HIGH",
+      "code": "LOW_RECALL",
+      "description": "Recall only 0.377 - model missing many trees",
+      "impact": "False negatives - undetected trees"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": 1,
+      "action": "Increase image size to 1280",
+      "reason": "Makes 10px trees appear as 20px - within YOLO's good detection range",
+      "command": "python Train/train.py --model yolo11s --img-size 1280 --batch 2 --epochs 300"
+    },
+    {
+      "priority": 2,
+      "action": "Use larger model (yolo11s or yolo11m)",
+      "reason": "More capacity to learn small object patterns",
+      "command": "python Train/train.py --model yolo11m --img-size 1280 --batch 1 --epochs 500"
+    },
+    {
+      "priority": 3,
+      "action": "Increase copy_paste augmentation to 0.2-0.3",
+      "reason": "Critical for small isolated objects",
+      "command": "python Train/train.py --copy-paste 0.2"
+    },
+    {
+      "priority": 4,
+      "action": "Generate more training tiles with higher overlap",
+      "reason": "Current 17 tiles is very limited",
+      "command": "Edit Tools/prepare_multi_image_dataset.py - increase overlap to 50%"
+    }
+  ],
+  "bbox_analysis": {
+    "width_normalized": {
+      "min": 0.015625,
+      "max": 0.015625,
+      "mean": 0.015625
+    },
+    "height_normalized": {
+      "min": 0.015625,
+      "max": 0.015625,
+      "mean": 0.015625
+    },
+    "width_pixels_640": {
+      "min": 10.0,
+      "max": 10.0,
+      "mean": 10.0
+    },
+    "height_pixels_640": {
+      "min": 10.0,
+      "max": 10.0,
+      "mean": 10.0
+    }
+  },
+  "small_object_count": 5430,
+  "small_object_percent": 100.0
+}
