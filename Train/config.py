@@ -72,8 +72,8 @@ class TrainingConfig:
 
     # Other
     workers: int = 8  # Data loading workers (increased for better CPU utilization)
-    patience: 0  # DISABLE early stopping - force full training
-    save_period: -1  # Disable checkpoint saves to avoid Windows OSError
+    patience: int = 0  # DISABLE early stopping - force full training
+    save_period: int = -1  # Disable checkpoint saves to avoid Windows OSError
     resume: bool = False  # Resume from last checkpoint
 
 
