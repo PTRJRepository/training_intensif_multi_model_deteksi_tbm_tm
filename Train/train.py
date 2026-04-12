@@ -15,30 +15,9 @@ import shutil
 from pathlib import Path
 import tempfile
 
-# Force forward slashes in paths for Windows compatibility
-os.environ['YOLO_PROJECT'] = str(Path(__file__).parent.parent / 'runs').replace('\\', '/')
-
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-
-# Comprehensive patch for Windows path issues in Ultralytics
-_original_open = open
-_original_mkdir = Path.mkdir
-_original_save = Path.write_bytes
-
-def _patched_mkdir(self, mode=0o777, parents=False, exist_ok=False):
-    """Patch mkdir to handle Windows paths with backslashes."""
-    try:
-        return _original_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
-    except OSError as e:
-        if 'Invalid argument' in str(e) or 'invalid' in str(e).lower():
-            # Try with forward slashes
-            new_path = Path(str(self).replace('\\', '/'))
-            return _original_mkdir(new_path, mode=mode, parents=parents, exist_ok=exist_ok)
-        raise
-
-Path.mkdir = _patched_mkdir
 
 from Train.config import (
     get_config, print_config,
@@ -212,20 +191,48 @@ def main():
         'verbose': True,
     }
 
-    # Start training
+    # Use short temp path for training to avoid Windows MAX_PATH issue
+    # Then copy results back to original location
+    original_save_dir = Path(project_cfg.save_dir)
+    original_exp_name = str(project_cfg.experiment_name).replace('\\', '/')
+    
+    # Short training path: D:\tmp_train
+    short_train_dir = Path('D:/tmp_train')
+    short_train_dir.mkdir(parents=True, exist_ok=True)
+    
     print(f"\n[INFO] Starting training...")
-    print(f"[INFO] Output: {project_cfg.save_dir / project_cfg.experiment_name}")
+    print(f"[INFO] Training dir (temp): {short_train_dir}")
+    print(f"[INFO] Final output: {original_save_dir / original_exp_name}")
     print("=" * 60)
 
-    # Train without checkpoint save issues by saving to temp dir, then copying
-    train_args['project'] = str(project_cfg.save_dir).replace('\\', '/')
+    # Train with short path
+    train_args['project'] = str(short_train_dir).replace('\\', '/')
     train_args['name'] = str(project_cfg.experiment_name).replace('\\', '/')
     
     results = model.train(**train_args)
+    
+    # Copy results back to original location
+    src_dir = short_train_dir / original_exp_name
+    dst_dir = original_save_dir / original_exp_name
+    
+    if src_dir.exists():
+        # Remove old results if exist
+        if dst_dir.exists():
+            shutil.rmtree(dst_dir)
+        shutil.copytree(src_dir, dst_dir)
+        print(f"\n[INFO] Results copied to: {dst_dir}")
+        
+        # Cleanup temp
+        try:
+            shutil.rmtree(short_train_dir)
+        except Exception:
+            pass
+    else:
+        print(f"\n[WARNING] Training results not found at: {src_dir}")
 
     print("\n" + "=" * 60)
     print("[SUCCESS] Training complete!")
-    best_path = Path(project_cfg.save_dir) / project_cfg.experiment_name / "weights" / "best.pt"
+    best_path = dst_dir / "weights" / "best.pt"
     print(f"[INFO] Best model: {str(best_path).replace(chr(92), '/')}")
     print("=" * 60)
 
