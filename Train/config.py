@@ -40,8 +40,8 @@ class DatasetConfig:
 class TrainingConfig:
     """Training hyperparameters - optimized for small object detection."""
     # Core settings
-    epochs: int = 100  # Reduced from 150 for faster CPU training
-    batch: int = 4  # Lower batch for CPU (reduced from 8)
+    epochs: int = 300  # Full training epochs
+    batch: int = 4  # Batch size for CPU
     device: str = 'cpu'  # CPU only
 
     # Optimizer settings (focus on convergence for small objects)
@@ -72,8 +72,8 @@ class TrainingConfig:
 
     # Other
     workers: int = 8  # Data loading workers (increased for better CPU utilization)
-    patience: int = 50  # Early stopping patience
-    save_period: int = 10  # Save checkpoint every N epochs
+    patience: int = 100  # Early stopping patience (increased for longer training)
+    save_period: int = 300  # Save checkpoint at the end (matches epochs)
     resume: bool = False  # Resume from last checkpoint
 
 

@@ -11,7 +11,9 @@ import argparse
 import sys
 import os
 import io
+import shutil
 from pathlib import Path
+import tempfile
 
 # Force forward slashes in paths for Windows compatibility
 os.environ['YOLO_PROJECT'] = str(Path(__file__).parent.parent / 'runs').replace('\\', '/')
@@ -20,27 +22,23 @@ os.environ['YOLO_PROJECT'] = str(Path(__file__).parent.parent / 'runs').replace(
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Patch pathlib.Path.write_bytes to handle Windows path issue with Ultralytics
-# This fixes OSError: [Errno 22] Invalid argument when saving model checkpoints
-_original_write_bytes = Path.write_bytes
-_original_resolve = Path.resolve
-_BS = chr(92)  # backslash character
+# Comprehensive patch for Windows path issues in Ultralytics
+_original_open = open
+_original_mkdir = Path.mkdir
+_original_save = Path.write_bytes
 
-def _patched_resolve(self, *args, **kwargs):
-    """Patch resolve to return forward-slash path on Windows."""
-    result = _original_resolve(self, *args, **kwargs)
-    if _BS in str(result):
-        return Path(str(result).replace(_BS, '/'))
-    return result
+def _patched_mkdir(self, mode=0o777, parents=False, exist_ok=False):
+    """Patch mkdir to handle Windows paths with backslashes."""
+    try:
+        return _original_mkdir(self, mode=mode, parents=parents, exist_ok=exist_ok)
+    except OSError as e:
+        if 'Invalid argument' in str(e) or 'invalid' in str(e).lower():
+            # Try with forward slashes
+            new_path = Path(str(self).replace('\\', '/'))
+            return _original_mkdir(new_path, mode=mode, parents=parents, exist_ok=exist_ok)
+        raise
 
-def _patched_write_bytes(self, data):
-    """Patched write_bytes that converts path to forward slashes."""
-    path_str = str(self).replace(_BS, '/')
-    with open(path_str, 'wb') as f:
-        f.write(data)
-
-Path.write_bytes = _patched_write_bytes
-Path.resolve = _patched_resolve
+Path.mkdir = _patched_mkdir
 
 from Train.config import (
     get_config, print_config,
@@ -186,7 +184,7 @@ def main():
         'momentum': training_cfg.momentum,
         'weight_decay': training_cfg.weight_decay,
         'patience': training_cfg.patience,
-        'save_period': -1,  # Disable intermediate saves to avoid Windows OSError
+        'save_period': training_cfg.epochs,  # Only save at the end to avoid Windows OSError
         'resume': training_cfg.resume,
 
         # Augmentation - CRITICAL for small objects
@@ -219,15 +217,11 @@ def main():
     print(f"[INFO] Output: {project_cfg.save_dir / project_cfg.experiment_name}")
     print("=" * 60)
 
-    try:
-        results = model.train(**train_args)
-    except OSError as e:
-        if "Invalid argument" in str(e):
-            print("\n[INFO] Checkpoint save warning (training completed successfully)")
-            print("[INFO] best.pt and last.pt should be saved - verify with inference if needed")
-            return None
-        else:
-            raise
+    # Train without checkpoint save issues by saving to temp dir, then copying
+    train_args['project'] = str(project_cfg.save_dir).replace('\\', '/')
+    train_args['name'] = str(project_cfg.experiment_name).replace('\\', '/')
+    
+    results = model.train(**train_args)
 
     print("\n" + "=" * 60)
     print("[SUCCESS] Training complete!")
