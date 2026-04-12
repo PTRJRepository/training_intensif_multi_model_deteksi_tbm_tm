@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(python -c ':*)",
+      "Bash(curl -s \"http://localhost:8000/api/images\")",
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(f'Found {len\\(data\\)} images'\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(python -c \"import fastapi; import uvicorn; import rasterio; import ultralytics; print\\('All deps OK'\\)\")",
+      "Bash(python build_and_update.py)",
+      "Bash(cp dist/assets/*.js ../python_app/static/assets/)",
+      "Bash(ls ../python_app/static/assets/*.js)"
+    ]
+  }
+}
