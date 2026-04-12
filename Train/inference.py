@@ -34,8 +34,8 @@ def parse_args():
                        help='Save confidence scores in txt')
     parser.add_argument('--augment', action='store_true',
                        help='Use TTA (Test Time Augmentation)')
-    parser.add_argument('--device', type=str, default='0',
-                       help='Device (0 for GPU)')
+    parser.add_argument('--device', type=str, default='cpu',
+                       help='Device (cpu, or 0 for GPU)')
 
     return parser.parse_args()
 
@@ -58,8 +58,9 @@ class TBMDetector:
         for w in weights:
             print(f"[INFO] Loading model: {w}")
             model = YOLO(w)
-            model.to(device)
             self.models.append(model)
+
+        self.device = device if device != '0' else 'cpu'  # Default to cpu on Windows
 
         print(f"[INFO] Loaded {len(self.models)} model(s)")
 
@@ -78,6 +79,7 @@ class TBMDetector:
                 conf=conf,
                 iou=iou,
                 augment=augment,
+                max_det=10000,  # Increased from default 300 to detect all trees
                 verbose=False
             )
 

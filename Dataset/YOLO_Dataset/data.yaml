@@ -1,0 +1,5 @@
+names:
+  0: palm_tree
+path: D:\Gawean Rebinmas\Tree Counting Project\Training Deteksi Sawit Multi Model\Dataset\YOLO_Dataset
+train: images/train
+val: images/val
