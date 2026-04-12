@@ -14,6 +14,7 @@ from rasterio.transform import from_bounds
 import numpy as np
 from PIL import Image
 import cv2
+from ultralytics import YOLO
 
 app = Flask(__name__)
 app.secret_key = "sawit-auto-labeling-secret-key-2026"
@@ -26,6 +27,27 @@ logger = logging.getLogger(__name__)
 UPLOAD_FOLDER = "auto_labeling/uploads"
 EXPORTS_FOLDER = "auto_labeling/exports"
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "tiff", "tif"}
+
+# YOLO Model Configuration - using exp2_yolo11s_1280 model
+YOLO_MODEL_PATH = os.path.join(
+    "Train", "runs", "exp2_yolo11s_1280", "weights", "best.pt"
+)
+yolo_model = None
+
+
+def load_yolo_model():
+    """Load YOLO model for auto-labeling"""
+    global yolo_model
+    if yolo_model is None:
+        try:
+            yolo_model = YOLO(YOLO_MODEL_PATH)
+            logger.info(f"YOLO model loaded from {YOLO_MODEL_PATH}")
+        except Exception as e:
+            logger.error(f"Failed to load YOLO model: {str(e)}")
+            yolo_model = YOLO("yolo11s.pt")  # Fallback to default model
+            logger.info("Loaded default YOLO11s model")
+    return yolo_model
+
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["EXPORTS_FOLDER"] = EXPORTS_FOLDER
@@ -403,6 +425,87 @@ def list_sessions():
             "created_at": session["created_at"],
         }
     return jsonify(sessions_info)
+
+
+@app.route("/auto_label", methods=["POST"])
+def auto_label():
+    """Auto-label image using YOLO model from exp2_yolo11s_1280"""
+    try:
+        data = request.json
+        session_id = data.get("session_id")
+        conf_threshold = data.get("conf_threshold", 0.25)
+        iou_threshold = data.get("iou_threshold", 0.45)
+
+        if session_id and session_id in session_data:
+            image_path = session_data[session_id]["image_path"]
+        elif "image_path" in data:
+            image_path = data["image_path"]
+        else:
+            return jsonify({"error": "No image path or session provided"}), 400
+
+        # Load model
+        model = load_yolo_model()
+
+        # Run inference
+        results = model(
+            image_path,
+            conf=conf_threshold,
+            iou=iou_threshold,
+            verbose=False
+        )
+
+        # Parse detections
+        detections = []
+        for result in results:
+            boxes = result.boxes
+            if boxes is None:
+                continue
+
+            for i in range(len(boxes)):
+                box = boxes[i].xyxy[0].tolist()
+                conf = float(boxes[i].conf[0])
+                cls_id = int(boxes[i].cls[0])
+                cls_name = result.names.get(cls_id, f"class_{cls_id}")
+
+                detections.append({
+                    "label": cls_name,
+                    "confidence": conf,
+                    "bbox": {
+                        "x1": box[0],
+                        "y1": box[1],
+                        "x2": box[2],
+                        "y2": box[3],
+                    },
+                    "center": {
+                        "x": (box[0] + box[2]) / 2,
+                        "y": (box[1] + box[3]) / 2,
+                    }
+                })
+
+        # Add detections as points in session
+        if session_id and session_id in session_data:
+            for det in detections:
+                point_data = {
+                    "id": len(session_data[session_id]["points"]),
+                    "x": det["center"]["x"],
+                    "y": det["center"]["y"],
+                    "label": det["label"],
+                    "bbox": det["bbox"],
+                    "confidence": det["confidence"],
+                    "auto_labeled": True,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                session_data[session_id]["points"].append(point_data)
+
+        return jsonify({
+            "success": True,
+            "detections": detections,
+            "total": len(detections),
+        })
+
+    except Exception as e:
+        logger.error(f"Auto-label error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

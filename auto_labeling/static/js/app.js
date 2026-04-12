@@ -702,7 +702,7 @@ function showToast(message, type = 'info') {
 function handleKeyDown(event) {
     // Prevent shortcuts when typing in input fields
     if (event.target.tagName === 'INPUT') return;
-    
+
     switch(event.key) {
         case 'a':
         case 'A':
@@ -731,5 +731,70 @@ function handleKeyDown(event) {
         case 'U':
             document.getElementById('imageInput').click();
             break;
+        case 'l':
+        case 'L':
+            autoLabel();
+            break;
     }
+}
+
+// Auto Label (AI Detection)
+function autoLabel() {
+    if (!sessionId) {
+        showToast('Please upload an image first', 'warning');
+        return;
+    }
+
+    const confThreshold = parseFloat(document.getElementById('conf-threshold').value);
+    const iouThreshold = parseFloat(document.getElementById('iou-threshold').value);
+
+    updateStatus('AI Auto-labeling...', 'working');
+    showLoadingModal('Running AI detection...');
+
+    fetch('/auto_label', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            session_id: sessionId,
+            conf_threshold: confThreshold,
+            iou_threshold: iouThreshold
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoadingModal();
+
+        if (data.success) {
+            // Refresh points from server
+            fetch(`/get_points/${sessionId}`)
+                .then(res => res.json())
+                .then(pointsData => {
+                    if (pointsData.success) {
+                        points = pointsData.points;
+                        redraw();
+                        updatePointsCounter();
+
+                        updateStatus(`AI found ${data.total} detections`, 'ready');
+                        showToast(`AI detected ${data.total} objects (conf: ${confThreshold})`, 'success');
+                    }
+                });
+        } else {
+            updateStatus('AI detection failed', 'error');
+            showToast('Auto-label error: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        hideLoadingModal();
+        updateStatus('Network error', 'error');
+        showToast('Network error: ' + error.message, 'error');
+    });
+}
+
+function showLoadingModal(message) {
+    document.getElementById('loading-text').textContent = message;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('loadingModal')).show();
+}
+
+function hideLoadingModal() {
+    bootstrap.Modal.getInstance(document.getElementById('loadingModal')).hide();
 }

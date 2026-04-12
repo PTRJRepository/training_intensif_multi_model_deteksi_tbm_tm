@@ -334,3 +334,51 @@ body {
     font-size: 0.85rem;
     margin: 0;
 }
+
+/* Auto Label Button */
+.btn-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.btn-success:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+}
+
+.btn-success:active {
+    transform: translateY(0);
+}
+
+/* Threshold Sliders */
+.form-range::-webkit-slider-thumb {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.form-range::-moz-range-thumb {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+/* Detection Bounding Box Preview */
+.detection-box {
+    position: absolute;
+    border: 2px solid;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 8;
+    animation: detectionAppear 0.3s ease-out;
+}
+
+@keyframes detectionAppear {
+    0% {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}

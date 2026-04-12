@@ -6,7 +6,8 @@
       "Bash(git remote *)",
       "Bash(git add *)",
       "Bash(git checkout *)",
-      "Read(C:\\Users\\nbgmf\\.config\\opencode/**)"
+      "Read(C:\\Users\\nbgmf\\.config\\opencode/**)",
+      "Bash(rmdir *)"
     ]
   },
   "$version": 3
