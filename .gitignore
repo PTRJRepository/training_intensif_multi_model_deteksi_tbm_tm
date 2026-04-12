@@ -35,6 +35,6 @@ Thumbs.db
 # Dataset/
 
 # Model weights (tracked for sharing)
-*.pt
+# *.pt
 # *.onnx
 # *.engine
