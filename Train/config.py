@@ -95,7 +95,7 @@ class EvaluationConfig:
 class ProjectConfig:
     """Project/output configuration."""
     project_name: str = 'TBM_Detection'
-    experiment_name: str = 'train_13_4_2026_tbm_only'
+    experiment_name: str = '13_04_2026_tbm_only_2'
     save_dir: Path = Path(__file__).parent / "runs"
     exist_ok: bool = True  # Overwrite existing
 

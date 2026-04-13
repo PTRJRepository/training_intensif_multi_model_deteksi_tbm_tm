@@ -141,8 +141,8 @@ def main():
         print("Install with: pip install ultralytics")
         sys.exit(1)
 
-    # Build model
-    print(f"\n[INFO] Initializing {model_cfg.model_name}...")
+    # Build model - train from scratch (not fine-tuning)
+    print(f"\n[INFO] Initializing {model_cfg.model_name} from scratch...")
     model = YOLO(f'{model_cfg.model_name}.pt')
 
     # Training arguments optimized for small object detection
@@ -196,8 +196,8 @@ def main():
     original_save_dir = Path(project_cfg.save_dir)
     original_exp_name = str(project_cfg.experiment_name).replace('\\', '/')
 
-    # Short training path: D:\tmp_train (avoids Windows 260 char limit)
-    short_train_dir = Path('D:/tmp_train')
+    # Short training path: D:/tmp_train_2 (avoids Windows 260 char limit)
+    short_train_dir = Path('D:/tmp_train_2')
     short_train_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n[INFO] Starting training...")
