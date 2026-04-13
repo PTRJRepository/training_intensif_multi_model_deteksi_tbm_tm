@@ -147,8 +147,8 @@ const ImageCanvas: React.FC<Props> = ({ imageInfo, points, setPoints, onAutoDete
     const s = scale;
     const x = Math.max(0, Math.floor(-position.x / s));
     const y = Math.max(0, Math.floor(-position.y / s));
-    const w = Math.min(imageInfo.width, Math.ceil(canvas.width / s));
-    const h = Math.min(imageInfo.height, Math.ceil(canvas.height / s));
+    const w = Math.min(imageInfo.width, Math.ceil(canvas.clientWidth / s));
+    const h = Math.min(imageInfo.height, Math.ceil(canvas.clientHeight / s));
     onAutoDetect({ x, y, w, h });
   };
 

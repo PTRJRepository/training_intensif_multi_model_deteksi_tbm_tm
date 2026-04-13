@@ -7,7 +7,15 @@
       "Bash(git add *)",
       "Bash(git checkout *)",
       "Read(C:\\Users\\nbgmf\\.config\\opencode/**)",
-      "Bash(rmdir *)"
+      "Bash(rmdir *)",
+      "Bash(git pull)",
+      "Bash(npm uninstall *)",
+      "Bash(bun *)",
+      "Bash(dir *)",
+      "Bash(del *)",
+      "Bash(git fetch *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   },
   "$version": 3

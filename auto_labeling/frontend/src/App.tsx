@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api, downloadShapefileFromBlob } from './api';
-import { TreePine, Save, Download, Crop, Play, X, RotateCcw, ZoomIn, Eye, CheckCircle2, AlertCircle, Layers, EyeOff, Trash2, Upload } from 'lucide-react';
+import { TreePine, Save, Download, Crop, Play, X, RotateCcw, ZoomIn, Eye, CheckCircle2, AlertCircle, Layers, EyeOff, Trash2, Upload, FolderOpen } from 'lucide-react';
 
 export interface DetectionPoint { x: number; y: number; label: string; conf?: number; }
 export interface ImageInfo { name: string; path: string; width: number; height: number; }
@@ -458,6 +458,31 @@ const App: React.FC = () => {
     }
   };
 
+  const handlePickExportDir = async () => {
+    setLoading('Opening folder picker...');
+    try {
+      const resp = await api.pickExportDir();
+      const pickedDir = resp.data?.export_dir || '';
+      if (resp.data?.status === 'cancelled') {
+        setStatusMsg('Folder selection cancelled');
+        return;
+      }
+      if (pickedDir) {
+        setExportDir(pickedDir);
+        setTempExportDir(pickedDir);
+        setShowExportDirInput(true);
+        setStatusMsg('Export dir selected');
+      } else {
+        setStatusMsg('No folder selected');
+      }
+    } catch (err) {
+      setStatusMsg('Failed to open folder picker');
+      console.error(err);
+    } finally {
+      setLoading(null);
+    }
+  };
+
   // Import shapefile as layer
   const handleImportLayer = async () => {
     if (!importLayerPath || !selectedImage) return;
@@ -707,8 +732,11 @@ const App: React.FC = () => {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <button onClick={handleSaveLabels} style={{ padding: '8px', background: '#222', border: '1px solid #333', borderRadius: 6, color: '#ccc', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><Save size={14} /> Save Labels</button>
-              <button onClick={() => setShowExportDirInput(!showExportDirInput)} style={{ padding: '8px', background: '#333', border: '1px solid #444', borderRadius: 6, color: '#ccc', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+              <button onClick={() => { setTempExportDir(exportDir); setShowExportDirInput(!showExportDirInput); }} style={{ padding: '8px', background: '#333', border: '1px solid #444', borderRadius: 6, color: '#ccc', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                 <Download size={12} /> Export Dir
+              </button>
+              <button onClick={handlePickExportDir} style={{ padding: '8px', background: '#1f2937', border: '1px solid #374151', borderRadius: 6, color: '#d1d5db', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <FolderOpen size={12} /> Browse Folder
               </button>
               {showExportDirInput && (
                 <div style={{ background: '#222', padding: 8, borderRadius: 4 }}>
@@ -721,6 +749,7 @@ const App: React.FC = () => {
                     style={{ width: '100%', padding: '4px 6px', fontSize: 10, background: '#333', color: '#fff', border: '1px solid #444', borderRadius: 4 }}
                   />
                   <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                    <button onClick={handlePickExportDir} style={{ flex: 1, padding: '4px', background: '#1f2937', color: '#d1d5db', border: '1px solid #374151', borderRadius: 4, cursor: 'pointer', fontSize: 10 }}>Browse</button>
                     <button onClick={async () => { try { await api.setExportDir(tempExportDir); setExportDir(tempExportDir); setShowExportDirInput(false); setStatusMsg('Export dir updated'); } catch { setStatusMsg('Failed to set dir'); } }} style={{ flex: 1, padding: '4px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 10 }}>Set</button>
                     <button onClick={() => setShowExportDirInput(false)} style={{ flex: 1, padding: '4px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 10 }}>Cancel</button>
                   </div>

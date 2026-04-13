@@ -9,7 +9,9 @@
       "Bash(python -c \"import fastapi; import uvicorn; import rasterio; import ultralytics; print\\('All deps OK'\\)\")",
       "Bash(python build_and_update.py)",
       "Bash(cp dist/assets/*.js ../python_app/static/assets/)",
-      "Bash(ls ../python_app/static/assets/*.js)"
+      "Bash(ls ../python_app/static/assets/*.js)",
+      "Bash(findstr \":5000\")",
+      "Bash(ls:*)"
     ]
   }
 }
