@@ -4,15 +4,15 @@ model: yolo11n.pt
 data: D:\Server\Services\train_tbm_tm\training_intensif_multi_model_deteksi_tbm_tm\Dataset\dataset_pakai_ini\data.yaml
 epochs: 300
 time: null
-patience: 50
-batch: 2
+patience: 0
+batch: 4
 imgsz: 640
 save: true
 save_period: -1
 cache: true
 device: cpu
 workers: 8
-project: D:/Server/Services/train_tbm_tm/training_intensif_multi_model_deteksi_tbm_tm/Train/runs
+project: D:/tmp_train
 name: train_13_4_2026_tbm_only
 exist_ok: true
 pretrained: true
@@ -106,4 +106,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: D:\Server\Services\train_tbm_tm\training_intensif_multi_model_deteksi_tbm_tm\Train\runs\train_13_4_2026_tbm_only
+save_dir: D:\tmp_train\train_13_4_2026_tbm_only
