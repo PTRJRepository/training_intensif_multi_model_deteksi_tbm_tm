@@ -2,6 +2,11 @@
 Fine-tuning script for TBM Detection with high accuracy and recall.
 Uses 640x640 detection window with optimizations for small objects.
 
+Robust handling:
+- Auto-validates and fixes data.yaml paths
+- Uses absolute paths throughout
+- Validates dataset before training
+
 Usage:
     python Train/fine_tuning/train_ft.py
     python Train/fine_tuning/train_ft.py --epochs 150
@@ -10,28 +15,21 @@ Usage:
 import argparse
 import sys
 import os
-import io
-import shutil
+import yaml
 from pathlib import Path
-import tempfile
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from Train.config import (
-    get_config, print_config,
-    ModelConfig, DatasetConfig, TrainingConfig,
-    EvaluationConfig, ProjectConfig
-)
+from Train.config import get_config, print_config
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Fine-tune TBM Detection Model')
     parser.add_argument('--model', type=str, default='yolo11n',
                         help='Model architecture')
-    parser.add_argument('--weights', type=str, 
-                       default='D:/Server/Services/train_tbm_tm/training_intensif_multi_model_deteksi_tbm_tm/Train/runs/train_13_4_2026_tbm_only/weights/best.pt',
-                       help='Base model weights for fine-tuning')
+    parser.add_argument('--weights', type=str, default=None,
+                       help='Pretrained weights path (default: train from scratch)')
     parser.add_argument('--epochs', type=int, default=200,
                         help='Number of training epochs')
     parser.add_argument('--batch', type=int, default=4,
@@ -51,10 +49,71 @@ def parse_args():
     return parser.parse_args()
 
 
-def override_config(config, args):
-    for arg, value in vars(args).items():
-        if value is not None and hasattr(config, arg):
-            setattr(config, arg, value)
+def validate_and_fix_data_yaml(yaml_path):
+    """Validate and fix data.yaml with robust path handling."""
+    print(f"\n[INFO] Validating data.yaml: {yaml_path}")
+    
+    errors = []
+    
+    if not yaml_path.exists():
+        errors.append(f"File not found: {yaml_path}")
+        return False, errors
+    
+    with open(yaml_path, 'r') as f:
+        data = yaml.safe_load(f)
+    
+    if data is None:
+        errors.append("Empty or invalid YAML file")
+        return False, errors
+    
+    base_dir = yaml_path.parent
+    paths_to_check = {}
+    
+    for key in ['train', 'val']:
+        if key in data:
+            path_str = data[key]
+            if Path(path_str).is_absolute():
+                paths_to_check[key] = Path(path_str)
+            else:
+                paths_to_check[key] = base_dir / path_str
+    
+    for key, path in paths_to_check.items():
+        if not path.exists():
+            errors.append(f"Missing {key} directory: {path}")
+    
+    if errors:
+        print(f"[WARNING] data.yaml has issues:")
+        for err in errors:
+            print(f"  - {err}")
+        print("\n[INFO] Fixing data.yaml with absolute paths...")
+        
+        train_path = base_dir / "images" / "train"
+        val_path = base_dir / "images" / "val"
+        
+        if not train_path.exists():
+            errors.append(f"Train path does not exist: {train_path}")
+        if not val_path.exists():
+            errors.append(f"Val path does not exist: {val_path}")
+        
+        if errors:
+            return False, errors
+        
+        fixed_data = {
+            'names': data.get('names', {0: 'TBM'}),
+            'train': str(train_path),
+            'val': str(val_path)
+        }
+        
+        with open(yaml_path, 'w') as f:
+            yaml.dump(fixed_data, f, default_flow_style=False)
+        
+        print(f"[INFO] data.yaml fixed!")
+        print(f"  train: {train_path}")
+        print(f"  val: {val_path}")
+        return True, []
+    
+    print(f"[INFO] data.yaml is valid!")
+    return True, []
 
 
 def main():
@@ -70,21 +129,36 @@ def main():
     training_cfg.device = args.device
     project_cfg.experiment_name = args.name
 
+    data_yaml_path = PROJECT_ROOT / "Dataset" / "dataset_pakai_ini" / "data.yaml"
     if args.data:
         dataset_cfg.data_yaml = Path(args.data)
+    else:
+        dataset_cfg.data_yaml = data_yaml_path
+
     if args.resume:
         training_cfg.resume = True
+
+    valid, errors = validate_and_fix_data_yaml(dataset_cfg.data_yaml)
+    if not valid:
+        print(f"\n[ERROR] Cannot proceed with invalid dataset:")
+        for err in errors:
+            print(f"  - {err}")
+        sys.exit(1)
 
     print_config(model_cfg, dataset_cfg, training_cfg, evaluation_cfg)
 
     if not dataset_cfg.data_yaml.exists():
-        print(f"\n[ERROR] Dataset not found: {dataset_cfg.data_yaml}")
+        print(f"\n[ERROR] Dataset file not found: {dataset_cfg.data_yaml}")
         sys.exit(1)
 
     from ultralytics import YOLO
 
-    print(f"\n[INFO] Loading base model: {args.weights}")
-    model = YOLO(args.weights)
+    if args.weights:
+        print(f"\n[INFO] Loading base model: {args.weights}")
+        model = YOLO(args.weights)
+    else:
+        print(f"\n[INFO] Training from scratch: {model_cfg.model_name}")
+        model = YOLO(f'{model_cfg.model_name}.pt')
 
     train_args = {
         'data': str(dataset_cfg.data_yaml),
@@ -121,17 +195,12 @@ def main():
         'mixup': 0.15,
         'copy_paste': 0.15,
         'close_mosaic': 10,
-        'project': None,
-        'name': None,
         'exist_ok': True,
         'verbose': True,
         'amp': False,
-        'pretrained': True,
-        'optimizer': 'AdamW',
-        'verbose': True,
     }
 
-    original_save_dir = Path(PROJECT_ROOT) / "Train" / "fine_tuning"
+    original_save_dir = PROJECT_ROOT / "Train" / "fine_tuning"
     original_exp_name = str(project_cfg.experiment_name).replace('\\', '/')
 
     short_train_dir = Path('D:/tmp_train_ft')
@@ -149,6 +218,8 @@ def main():
     train_args['save_period'] = -1
     train_args['patience'] = 0
 
+    import shutil
+    
     try:
         results = model.train(**train_args)
     except Exception as e:
