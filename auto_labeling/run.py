@@ -15,7 +15,7 @@ def get_ip():
     return IP
 
 def main():
-    print("🚀 Starting PalmAuto Labeling Tool...")
+    print("🚀 Starting Rebinmas Tree Detection...")
     local_ip = get_ip()
     
     current_dir = os.path.dirname(os.path.abspath(__file__))
