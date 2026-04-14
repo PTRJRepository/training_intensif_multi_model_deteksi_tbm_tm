@@ -11,10 +11,8 @@ from typing import List, Literal
 @dataclass
 class ModelConfig:
     """Model architecture configuration."""
-    # Model size: 'n' (nano), 's' (small), 'm' (medium)
-    # For small objects + high recall: use 'n' or 's' with proper augmentation
-    model_size: Literal['n', 's', 'm'] = 'n'
-    model_name: str = 'yolo11n'  # yolov8n, yolov8s, yolo11n, yolo11s, etc.
+    model_size: Literal['n', 's', 'm'] = 's'
+    model_name: str = 'yolo11s'  # yolo11s - better for small/many objects than yolo11n
 
 
 @dataclass
@@ -39,42 +37,42 @@ class DatasetConfig:
 @dataclass
 class TrainingConfig:
     """Training hyperparameters - optimized for small object detection."""
-    # Core settings
-    epochs: int = 300  # Full training epochs
-    batch: int = 4  # Batch size for CPU
-    device: str = 'cpu'  # CPU only
+    epochs: int = 350
+    batch: int = 4
+    device: str = 'cpu'
 
-    # Optimizer settings (focus on convergence for small objects)
-    optimizer: Literal['SGD', 'Adam', 'AdamW'] = 'Adam'
-    lr0: float = 0.001  # Initial learning rate (reduced from 0.01 for stability)
-    lrf: float = 0.01  # Final learning rate (lr0 * lrf)
+    optimizer: Literal['SGD', 'Adam', 'AdamW'] = 'AdamW'
+    lr0: float = 0.001
+    lrf: float = 0.01
     momentum: float = 0.937
     weight_decay: float = 0.0005
 
-    # Image augmentation for small objects
-    hsv_h: float = 0.015  # HSV-Hue augmentation
-    hsv_s: float = 0.7    # HSV-Saturation
-    hsv_v: float = 0.4    # HSV-Value
-    degrees: float = 15.0   # Rotation (+/- deg)
-    translate: float = 0.1   # Translation (+/- fraction)
-    scale: float = 0.5       # Scale (+/- gain)
-    shear: float = 0.0    # Shear
-    perspective: float = 0.0  # Perspective
-    flipud: float = 0.5   # Flip up-down
-    fliplr: float = 0.5   # Flip left-right
-    mosaic: float = 1.0   # Mosaic augmentation (excellent for small objects)
-    mixup: float = 0.1    # MixUp augmentation
-    copy_paste: float = 0.1  # Copy-paste (good for small objects)
+    hsv_h: float = 0.015
+    hsv_s: float = 0.7
+    hsv_v: float = 0.4
+    degrees: float = 15.0
+    translate: float = 0.1
+    scale: float = 0.9
+    shear: float = 2.0
+    perspective: float = 0.0
+    flipud: float = 0.3
+    fliplr: float = 0.5
+    mosaic: float = 1.0
+    mixup: float = 0.15
+    copy_paste: float = 0.15
+    zoom_in_factor: float = 1.5
+    zoom_out_factor: float = 0.5
 
-    # Small object specific
-    # YOLO handles small objects better with proper anchor settings
-    close_mosaic: int = 10  # Disable mosaic for last N epochs
+    close_mosaic: int = 10
 
-    # Other
-    workers: int = 8  # Data loading workers (increased for better CPU utilization)
-    patience: int = 0  # DISABLE early stopping - force full training
-    save_period: int = -1  # Disable checkpoint saves to avoid Windows OSError
-    resume: bool = False  # Resume from last checkpoint
+    workers: int = 8
+    patience: int = 0
+    save_period: int = -1
+    resume: bool = False
+
+    box: float = 7.5
+    cls: float = 0.5
+    dfl: float = 1.5
 
 
 @dataclass
@@ -95,7 +93,7 @@ class EvaluationConfig:
 class ProjectConfig:
     """Project/output configuration."""
     project_name: str = 'TBM_Detection'
-    experiment_name: str = 'train_13_4_2026_tbm_only'
+    experiment_name: str = 'ft_yolo11s_640_v2'
     save_dir: Path = Path(__file__).parent / "runs"
     exist_ok: bool = True  # Overwrite existing
 
