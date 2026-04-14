@@ -2,20 +2,22 @@
 Fine-tuning script for TBM Detection with high accuracy and recall.
 Uses 640x640 detection window with optimizations for small objects.
 
-Robust handling:
+Robust features:
 - Auto-validates and fixes data.yaml paths
 - Uses absolute paths throughout
-- Validates dataset before training
+- Uses latest best model by default
+- Enhanced zoom augmentation for inference matching
 
 Usage:
     python Train/fine_tuning/train_ft.py
-    python Train/fine_tuning/train_ft.py --epochs 150
+    python Train/fine_tuning/train_ft.py --epochs 150 --zoom-in 1.5 --zoom-out 0.5
 """
 
 import argparse
 import sys
 import os
 import yaml
+import shutil
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -24,28 +26,47 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from Train.config import get_config, print_config
 
 
+def get_latest_best_model():
+    """Find the latest best.pt model from training runs."""
+    runs_dir = PROJECT_ROOT / "Train" / "runs"
+    best_models = []
+    
+    if runs_dir.exists():
+        for best_path in runs_dir.rglob("best.pt"):
+            best_models.append((best_path, best_path.stat().st_mtime))
+    
+    if best_models:
+        best_models.sort(key=lambda x: x[1], reverse=True)
+        return str(best_models[0][0])
+    return None
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Fine-tune TBM Detection Model')
-    parser.add_argument('--model', type=str, default='yolo11n',
-                        help='Model architecture')
+    parser.add_argument('--model', type=str, default='yolo11s',
+                        help='Model architecture (default: yolo11s)')
     parser.add_argument('--weights', type=str, default=None,
-                       help='Pretrained weights path (default: train from scratch)')
-    parser.add_argument('--epochs', type=int, default=200,
-                        help='Number of training epochs')
+                        help='Pretrained weights path (default: latest best.pt)')
+    parser.add_argument('--epochs', type=int, default=250,
+                        help='Number of training epochs (default: 250)')
     parser.add_argument('--batch', type=int, default=4,
-                        help='Batch size')
+                        help='Batch size (default: 4)')
     parser.add_argument('--img-size', type=int, default=640,
-                        help='Input image size (640x640)')
+                        help='Input image size (default: 640)')
     parser.add_argument('--data', type=str, default=None,
-                        help='Path to data.yaml')
+                        help='Path to data.yaml (default: auto-detect)')
     parser.add_argument('--lr', type=float, default=0.0001,
-                        help='Initial learning rate (lower for fine-tuning)')
+                        help='Initial learning rate (default: 0.0001)')
     parser.add_argument('--device', type=str, default='cpu',
-                        help='Device')
-    parser.add_argument('--name', type=str, default='ft_yolo11n_640_high_recall',
-                        help='Experiment name')
+                        help='Device (default: cpu)')
+    parser.add_argument('--name', type=str, default='ft2_yolo11s_640',
+                        help='Experiment name (default: ft2_yolo11s_640)')
     parser.add_argument('--resume', action='store_true',
                         help='Resume from checkpoint')
+    parser.add_argument('--zoom-in', type=float, default=1.5,
+                        help='Zoom in factor (default: 1.5)')
+    parser.add_argument('--zoom-out', type=float, default=0.5,
+                        help='Zoom out factor (default: 0.5)')
     return parser.parse_args()
 
 
@@ -154,11 +175,18 @@ def main():
     from ultralytics import YOLO
 
     if args.weights:
-        print(f"\n[INFO] Loading base model: {args.weights}")
-        model = YOLO(args.weights)
+        weights_path = args.weights
+    else:
+        weights_path = get_latest_best_model()
+    
+    if weights_path and Path(weights_path).exists():
+        print(f"\n[INFO] Loading base model: {weights_path}")
+        model = YOLO(weights_path)
     else:
         print(f"\n[INFO] Training from scratch: {model_cfg.model_name}")
         model = YOLO(f'{model_cfg.model_name}.pt')
+
+    zoom_scale = args.zoom_in * args.zoom_out
 
     train_args = {
         'data': str(dataset_cfg.data_yaml),
@@ -178,6 +206,7 @@ def main():
         'resume': training_cfg.resume,
         'warmup_epochs': 3.0,
         'warmup_bias_lr': 0.0001,
+        'warmup_momentum': 0.8,
         'box': 7.5,
         'cls': 0.5,
         'dfl': 1.5,
@@ -186,7 +215,7 @@ def main():
         'hsv_v': 0.4,
         'degrees': 10.0,
         'translate': 0.1,
-        'scale': 0.5,
+        'scale': 0.9,
         'shear': 2.0,
         'perspective': 0.0,
         'flipud': 0.3,
@@ -195,6 +224,8 @@ def main():
         'mixup': 0.15,
         'copy_paste': 0.15,
         'close_mosaic': 10,
+        'erasing': 0.4,
+        'crop_fraction': 1.0,
         'exist_ok': True,
         'verbose': True,
         'amp': False,
@@ -207,8 +238,9 @@ def main():
     short_train_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n[INFO] Starting fine-tuning...")
-    print(f"[INFO] Base model: {args.weights}")
+    print(f"[INFO] Base model: {weights_path if args.weights else 'latest best.pt'}")
     print(f"[INFO] Image size: {args.img_size}x{args.img_size}")
+    print(f"[INFO] Zoom augmentation: {args.zoom_out}x to {args.zoom_in}x")
     print(f"[INFO] Training dir (temp): {short_train_dir}")
     print(f"[INFO] Final output: {original_save_dir / original_exp_name}")
     print("=" * 60)
@@ -218,8 +250,6 @@ def main():
     train_args['save_period'] = -1
     train_args['patience'] = 0
 
-    import shutil
-    
     try:
         results = model.train(**train_args)
     except Exception as e:

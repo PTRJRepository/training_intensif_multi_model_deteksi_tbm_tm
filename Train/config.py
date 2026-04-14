@@ -60,6 +60,7 @@ class TrainingConfig:
     mosaic: float = 1.0
     mixup: float = 0.15
     copy_paste: float = 0.15
+    erasing: float = 0.4
     zoom_in_factor: float = 1.5
     zoom_out_factor: float = 0.5
 
@@ -93,7 +94,7 @@ class EvaluationConfig:
 class ProjectConfig:
     """Project/output configuration."""
     project_name: str = 'TBM_Detection'
-    experiment_name: str = 'ft_yolo11s_640_v2'
+    experiment_name: str = 'ft2_yolo11s_640'
     save_dir: Path = Path(__file__).parent / "runs"
     exist_ok: bool = True  # Overwrite existing
 
@@ -135,6 +136,7 @@ def print_config(model: ModelConfig, dataset: DatasetConfig,
     print(f"  Optimizer: {training.optimizer}")
     print(f"  Initial LR: {training.lr0}")
     print(f"  Mosaic: {training.mosaic} | MixUp: {training.mixup} | CopyPaste: {training.copy_paste}")
+    print(f"  Scale: {training.scale} | Erasing: {training.erasing}")
 
     print(f"\n[EVALUATION]")
     print(f"  IoU threshold: {evaluation.iou_thres}")
