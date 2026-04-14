@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { api, downloadShapefileFromBlob } from './api';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { api, downloadShapefileFromBlob, type ModelInfo } from './api';
 import { TreePine, Save, Download, Crop, Play, X, RotateCcw, ZoomIn, Eye, CheckCircle2, AlertCircle, Layers, EyeOff, Trash2, Upload, FolderOpen } from 'lucide-react';
 
 export interface DetectionPoint { x: number; y: number; label: string; conf?: number; }
@@ -17,6 +17,11 @@ const App: React.FC = () => {
   const [statusMsg, setStatusMsg] = useState('');
   const [scanningBox, setScanningBox] = useState<number[] | null>(null);
   const [progress, setProgress] = useState(0);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [autoBestByClass, setAutoBestByClass] = useState<Record<string, string | null>>({ tbm: null, tm: null });
+  const [inferClass, setInferClass] = useState<'tbm' | 'tm'>('tbm');
+  const [modelSelectMode, setModelSelectMode] = useState<'auto_latest' | 'manual'>('auto_latest');
+  const [manualModelId, setManualModelId] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const [selectionMode, setSelectionMode] = useState(false);
@@ -39,7 +44,12 @@ const App: React.FC = () => {
     conf: 0.1,
     tileSize: 640,
     overlap: 0.25,
-    imgsz: 640
+    imgsz: 640,
+    dbscanEps: 12.0,
+    clusterMethod: 'hybrid',
+    maxPasses: 2,
+    minNewPoints: 2,
+    batchSize: 8
   });
   const [showSettings, setShowSettings] = useState(false);
 
@@ -78,7 +88,10 @@ const App: React.FC = () => {
   const isDragging = useRef(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
-  useEffect(() => { loadImages(); }, []);
+  useEffect(() => {
+    loadImages();
+    loadModels();
+  }, []);
   useEffect(() => {
     const onResize = () => setViewportWidth(window.innerWidth);
     window.addEventListener('resize', onResize);
@@ -94,6 +107,53 @@ const App: React.FC = () => {
   useEffect(() => {
     offsetRef.current = offset;
   }, [offset]);
+
+  const classModels = useMemo(() => {
+    const filtered = models.filter(
+      (model) =>
+        model.class_tag === inferClass &&
+        model.enabled &&
+        model.loaded &&
+        model.exists
+    );
+    filtered.sort(
+      (a, b) => Number(b.modified_ts || 0) - Number(a.modified_ts || 0)
+    );
+    return filtered;
+  }, [models, inferClass]);
+
+  const autoBestModelId = useMemo(() => {
+    const suggested = autoBestByClass[inferClass];
+    if (suggested && classModels.some((model) => model.id === suggested)) {
+      return suggested;
+    }
+    return classModels[0]?.id || '';
+  }, [autoBestByClass, classModels, inferClass]);
+
+  const effectiveModelId = useMemo(() => {
+    if (modelSelectMode === 'manual') {
+      if (manualModelId && classModels.some((model) => model.id === manualModelId)) {
+        return manualModelId;
+      }
+    }
+    return autoBestModelId;
+  }, [modelSelectMode, manualModelId, classModels, autoBestModelId]);
+
+  const effectiveModelInfo = useMemo(
+    () => classModels.find((model) => model.id === effectiveModelId) || null,
+    [classModels, effectiveModelId]
+  );
+
+  useEffect(() => {
+    if (!classModels.length) {
+      setManualModelId('');
+      return;
+    }
+    if (!manualModelId || !classModels.some((model) => model.id === manualModelId)) {
+      setManualModelId(classModels[0].id);
+    }
+  }, [classModels, manualModelId]);
+
   const loadImages = async () => { 
     try { 
       const resp = await api.getImages(); 
@@ -119,6 +179,22 @@ const App: React.FC = () => {
       const dirResp = await api.getExportDir();
       setExportDir(dirResp.data.export_dir);
     } catch (err) { }
+  };
+
+  const loadModels = async () => {
+    try {
+      const resp = await api.getModels();
+      const modelList = resp.data.models || [];
+      setModels(modelList);
+      setAutoBestByClass(resp.data.auto_best_by_class || { tbm: null, tm: null });
+    } catch (err) {
+      setStatusMsg('Failed to load model list');
+    }
+  };
+
+  const formatModelDate = (model: ModelInfo) => {
+    if (!model.modified_at) return '-';
+    return model.modified_at;
   };
 
   const handleSelectImage = async (img: any) => {
@@ -380,19 +456,34 @@ const App: React.FC = () => {
     setTimeout(handleAutoDetect, 100);
   };
 
+  const [currentPass, setCurrentPass] = useState<{current: number, total: number} | null>(null);
+
   const handleAutoDetect = async () => {
     if (!selectedImage) return;
+    if (!effectiveModelId) {
+      if (inferClass === 'tm') {
+        setStatusMsg('[TM] Belum ada model TM aktif');
+      } else {
+        setStatusMsg('[TBM] Tidak ada model aktif untuk class ini');
+      }
+      return;
+    }
     // Save current points to history before detection
     saveToHistory(points);
     // Keep manual points separate
     const manualPoints = points.filter(p => p.label === 'manual' || p.label === 'manual_tree');
     
-    setDetecting(true); setPoints(manualPoints); setStatusMsg('Scanning...'); setProgress(0);
+    setDetecting(true); setPoints(manualPoints); setProgress(0); setCurrentPass(null);
+    setStatusMsg(`Scanning with [${inferClass.toUpperCase()}] ${effectiveModelInfo?.name || effectiveModelId}...`);
+    
     abortControllerRef.current = new AbortController();
     try {
-      let url = `/api/detect-full?path=${encodeURIComponent(selectedImage.path)}&conf=${detectSettings.conf}&tile_size=${detectSettings.tileSize}&overlap=${detectSettings.overlap}&imgsz=${detectSettings.imgsz}`;
+      let url = `/api/detect-full?path=${encodeURIComponent(selectedImage.path)}&conf=${detectSettings.conf}&tile_size=${detectSettings.tileSize}&overlap=${detectSettings.overlap}&imgsz=${detectSettings.imgsz}&infer_class=${inferClass}&dbscan_eps=${detectSettings.dbscanEps}&cluster_method=${encodeURIComponent(detectSettings.clusterMethod)}&max_passes=${detectSettings.maxPasses}&min_new_points=${detectSettings.minNewPoints}&batch_size=${detectSettings.batchSize}&model_ids=${encodeURIComponent(effectiveModelId)}`;
       if (polygon.length > 2) url += `&polygon=${encodeURIComponent(JSON.stringify(polygon))}`;
       const response = await fetch(url, { method: 'POST', signal: abortControllerRef.current.signal });
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       const reader = response.body!.getReader(); const decoder = new TextDecoder(); let buffer = '';
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
@@ -402,19 +493,36 @@ const App: React.FC = () => {
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.replace('data: ', ''));
-            if (data.type === 'window') { setScanningBox(data.window); setProgress(data.progress || 0); }
-            else if (data.type === 'points') setPoints(prev => [...prev, ...data.points]);
-            else if (data.type === 'final') { 
-              const detectedPoints = data.points.map((p: any) => ({...p, label: 'detected'}));
+            if (data.type === 'window') { 
+              setScanningBox(data.window); 
+              setProgress(data.progress || 0); 
+              if (data.pass) {
+                setCurrentPass({ current: data.pass, total: data.total_passes || 1 });
+                setStatusMsg(`Pass ${data.pass}/${data.total_passes || 1} | [${inferClass.toUpperCase()}] ${effectiveModelInfo?.name || effectiveModelId}...`);
+              }
+            }
+            else if (data.type === 'final') {
+              const detectedPoints = (data.points || []).map((p: any) => ({
+                ...p,
+                label: p.label || 'palm_tree'
+              }));
               setPoints([...manualPoints, ...detectedPoints]); 
               setScanningBox(null); 
-              setStatusMsg(`Found ${detectedPoints.length} detected + ${manualPoints.length} manual`); 
+              setCurrentPass(null);
+              setStatusMsg(`[${inferClass.toUpperCase()}] ${effectiveModelInfo?.name || effectiveModelId}: ${detectedPoints.length} detected + ${manualPoints.length} manual`); 
             }
           } catch (e) { }
         }
       }
     } catch (err: any) { setStatusMsg(err.name === 'AbortError' ? 'Stopped.' : 'Error'); }
-    finally { setDetecting(false); setScanningBox(null); abortControllerRef.current = null; }
+    finally { setDetecting(false); setScanningBox(null); setCurrentPass(null); abortControllerRef.current = null; }
+  };
+
+  const handleStopDetection = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setStatusMsg('Stopping detection...');
+    }
   };
 
   const handleSaveLabels = async () => {
@@ -575,14 +683,70 @@ const App: React.FC = () => {
               )}
             </div>
             <div style={{ background: '#1a1a1a', borderRadius: 8, padding: 8, marginBottom: 16, border: '1px solid #222' }}>
-              <button onClick={handleAutoDetect} disabled={detecting} style={{ width: '100%', padding: '12px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <button onClick={detecting ? handleStopDetection : handleAutoDetect} disabled={!detecting && !effectiveModelId} style={{ width: '100%', padding: '12px', background: detecting ? '#ef4444' : (!effectiveModelId ? '#555' : '#16a34a'), color: 'white', border: 'none', borderRadius: 6, fontWeight: 700, cursor: (!detecting && !effectiveModelId) ? 'not-allowed' : 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 {!detecting ? <><Play size={14} fill="currentColor" /> Run Detection</> : <><X size={14} /> Stop ({Math.round(progress*100)}%)</>}
               </button>
+              <div style={{ marginTop: 6, fontSize: 10, color: '#9ca3af', background: '#242424', border: '1px solid #333', borderRadius: 4, padding: '6px 8px' }}>
+                {effectiveModelInfo ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Model: <strong>{effectiveModelInfo.name}</strong></span>
+                      <span style={{ color: '#22c55e', fontWeight: 600 }}>[{effectiveModelInfo.model_tag}]</span>
+                    </div>
+                    <div style={{ fontSize: 9, color: '#666' }}>
+                      Modified: {formatModelDate(effectiveModelInfo)} 
+                      {effectiveModelId === autoBestModelId && <span style={{ color: '#3b82f6', marginLeft: 4 }}>(Latest)</span>}
+                    </div>
+                  </div>
+                ) : (
+                  <>Inference model: - (no active model for {inferClass.toUpperCase()})</>
+                )}
+              </div>
               <button onClick={() => setShowSettings(!showSettings)} style={{ width: '100%', marginTop: 6, padding: '6px', background: '#333', color: '#aaa', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                 <Eye size={12} /> {showSettings ? 'Hide' : 'Show'} Settings
               </button>
               {showSettings && (
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, background: '#222', padding: 8, borderRadius: 4 }}>
+                  <div style={{ fontSize: 10, color: '#888', fontWeight: 600, marginBottom: 2 }}>Model Inference</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: '#888' }}>Class</span>
+                    <span style={{ fontSize: 10, color: '#22c55e' }}>{inferClass.toUpperCase()}</span>
+                  </div>
+                  <select value={inferClass} onChange={e => setInferClass(e.target.value as 'tbm' | 'tm')} style={{ width: '100%', padding: '5px 6px', fontSize: 10, background: '#333', color: '#fff', border: '1px solid #444', borderRadius: 4 }}>
+                    <option value="tbm">TBM</option>
+                    <option value="tm">TM</option>
+                  </select>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: '#888' }}>Selection Mode</span>
+                    <span style={{ fontSize: 10, color: '#22c55e' }}>{modelSelectMode === 'auto_latest' ? 'AUTO' : 'MANUAL'}</span>
+                  </div>
+                  <select value={modelSelectMode} onChange={e => setModelSelectMode(e.target.value as 'auto_latest' | 'manual')} style={{ width: '100%', padding: '5px 6px', fontSize: 10, background: '#333', color: '#fff', border: '1px solid #444', borderRadius: 4 }}>
+                    <option value="auto_latest">Auto (Latest Modified)</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                  {modelSelectMode === 'manual' && (
+                    <select value={manualModelId} onChange={e => setManualModelId(e.target.value)} style={{ width: '100%', padding: '5px 6px', fontSize: 10, background: '#333', color: '#fff', border: '1px solid #444', borderRadius: 4 }}>
+                      {classModels.length === 0 ? (
+                        <option value="">No model available</option>
+                      ) : (
+                        classModels.map(model => (
+                          <option key={model.id} value={model.id}>{model.name} [{model.model_tag}] - {formatModelDate(model)}</option>
+                        ))
+                      )}
+                    </select>
+                  )}
+                  <div style={{ fontSize: 10, color: '#a3a3a3', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: 4, padding: '6px 8px' }}>
+                    Selected: {effectiveModelId || '-'}
+                  </div>
+                  {classModels.length > 0 && (
+                    <div style={{ maxHeight: 120, overflowY: 'auto', border: '1px solid #333', borderRadius: 4, background: '#1c1c1c', padding: 4 }}>
+                      {classModels.map(model => (
+                        <div key={model.id} style={{ fontSize: 9, color: '#cfcfcf', padding: '3px 4px', borderBottom: '1px solid #2b2b2b' }}>
+                          [{model.model_tag}] {model.name} | {formatModelDate(model)}{model.id === autoBestModelId ? ' (latest)' : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: '#888' }}>Confidence</span>
                     <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.conf}</span>
@@ -603,6 +767,36 @@ const App: React.FC = () => {
                     <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.imgsz}</span>
                   </div>
                   <input type="range" min="640" max="1920" step="64" value={detectSettings.imgsz} onChange={e => setDetectSettings(s => ({...s, imgsz: parseInt(e.target.value)}))} style={{ width: '100%' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: '#888' }}>DBSCAN eps</span>
+                    <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.dbscanEps}</span>
+                  </div>
+                  <input type="range" min="5" max="30" step="1" value={detectSettings.dbscanEps} onChange={e => setDetectSettings(s => ({...s, dbscanEps: parseFloat(e.target.value)}))} style={{ width: '100%' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: '#888' }}>Cluster Method</span>
+                    <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.clusterMethod}</span>
+                  </div>
+                  <select value={detectSettings.clusterMethod} onChange={e => setDetectSettings(s => ({...s, clusterMethod: e.target.value}))} style={{ width: '100%', padding: '5px 6px', fontSize: 10, background: '#333', color: '#fff', border: '1px solid #444', borderRadius: 4 }}>
+                    <option value="hybrid">hybrid (recommended)</option>
+                    <option value="dbscan">dbscan</option>
+                    <option value="grid">grid</option>
+                    <option value="none">none</option>
+                  </select>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: '#888' }}>Max Passes</span>
+                    <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.maxPasses}</span>
+                  </div>
+                  <input type="range" min="1" max="5" step="1" value={detectSettings.maxPasses} onChange={e => setDetectSettings(s => ({...s, maxPasses: parseInt(e.target.value)}))} style={{ width: '100%' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: '#888' }}>Min New Points</span>
+                    <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.minNewPoints}</span>
+                  </div>
+                  <input type="range" min="0" max="20" step="1" value={detectSettings.minNewPoints} onChange={e => setDetectSettings(s => ({...s, minNewPoints: parseInt(e.target.value)}))} style={{ width: '100%' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: '#888' }}>Batch Size</span>
+                    <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.batchSize}</span>
+                  </div>
+                  <input type="range" min="1" max="16" step="1" value={detectSettings.batchSize} onChange={e => setDetectSettings(s => ({...s, batchSize: parseInt(e.target.value)}))} style={{ width: '100%' }} />
                 </div>
               )}
             </div>

@@ -1,0 +1,124 @@
+{
+  "models": [
+    {
+      "id": "train_runs_ft_yolo11s_640_v2_weights_last",
+      "name": "ft_yolo11s_640_v2",
+      "path": "Train/runs/ft_yolo11s_640_v2/weights/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_ft_yolo11s_640_v2_weights_best",
+      "name": "ft_yolo11s_640_v2",
+      "path": "Train/runs/ft_yolo11s_640_v2/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_fine_tuning_runs_temp_weights_last",
+      "name": "temp",
+      "path": "Train/fine_tuning/runs/temp/weights/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_fine_tuning_runs_temp_weights_best",
+      "name": "temp",
+      "path": "Train/fine_tuning/runs/temp/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_train_13_4_2026_tbm_only_weights_last",
+      "name": "train_13_4_2026_tbm_only",
+      "path": "Train/runs/train_13_4_2026_tbm_only/weights/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_train_13_4_2026_tbm_only_weights_best",
+      "name": "train_13_4_2026_tbm_only",
+      "path": "Train/runs/train_13_4_2026_tbm_only/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "yolo11s",
+      "name": "Tree Counting Project",
+      "path": "yolo11s.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "yolo11n",
+      "name": "Tree Counting Project",
+      "path": "yolo11n.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_exp2_yolo11s_1280_weights_last",
+      "name": "exp2_yolo11s_1280",
+      "path": "Train/runs/exp2_yolo11s_1280/weights/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_exp2_yolo11s_1280_weights_best",
+      "name": "exp2_yolo11s_1280",
+      "path": "Train/runs/exp2_yolo11s_1280/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_exp1_yolo11n_640_weights_last",
+      "name": "exp1_yolo11n_640",
+      "path": "Train/runs/exp1_yolo11n_640/weights/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_exp1_yolo11n_640_weights_best",
+      "name": "exp1_yolo11n_640",
+      "path": "Train/runs/exp1_yolo11n_640/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    }
+  ]
+}

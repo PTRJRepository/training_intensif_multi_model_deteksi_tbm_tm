@@ -15,7 +15,20 @@
       "Bash(del *)",
       "Bash(git fetch *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git merge *)",
+      "Bash(scoop *)",
+      "Bash(select-string *)",
+      "Bash(npm *)",
+      "Bash(test-path *)",
+      "Bash(get-command *)",
+      "Bash(powershell *)",
+      "Bash(opencode *)",
+      "Bash(where *)",
+      "Bash(which *)",
+      "Bash(findstr *)",
+      "Bash(type *)",
+      "Bash(echo. *)"
     ]
   },
   "$version": 3
