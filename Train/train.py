@@ -59,6 +59,10 @@ def parse_args():
                        help='MixUp augmentation (0.0-1.0)')
     parser.add_argument('--copy-paste', type=float, default=None,
                        help='Copy-paste augmentation (0.0-1.0)')
+    parser.add_argument('--zoom-in', type=float, default=None,
+                       help='Zoom in factor for scale augmentation (e.g., 1.5)')
+    parser.add_argument('--zoom-out', type=float, default=None,
+                       help='Zoom out factor for scale augmentation (e.g., 0.5)')
     parser.add_argument('--device', type=str, default='cpu',
                        help='Device (0 for GPU, cpu for CPU)')
     parser.add_argument('--name', type=str, default=None,
@@ -171,6 +175,10 @@ def main():
         training_cfg.mixup = args.mixup
     if args.copy_paste:
         training_cfg.copy_paste = args.copy_paste
+    if args.zoom_in:
+        training_cfg.zoom_in_factor = args.zoom_in
+    if args.zoom_out:
+        training_cfg.zoom_out_factor = args.zoom_out
     if args.device:
         training_cfg.device = args.device
     if args.name:
@@ -236,6 +244,8 @@ def main():
         'mixup': training_cfg.mixup,
         'copy_paste': training_cfg.copy_paste,
         'close_mosaic': training_cfg.close_mosaic,
+        'erasing': 0.4,
+        'crop_fraction': 1.0,
         'project': str(project_cfg.save_dir).replace('\\', '/'),
         'name': str(project_cfg.experiment_name).replace('\\', '/'),
         'exist_ok': project_cfg.exist_ok,

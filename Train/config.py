@@ -52,7 +52,7 @@ class TrainingConfig:
     hsv_v: float = 0.4
     degrees: float = 15.0
     translate: float = 0.1
-    scale: float = 0.5
+    scale: float = 0.9
     shear: float = 2.0
     perspective: float = 0.0
     flipud: float = 0.3
@@ -60,6 +60,8 @@ class TrainingConfig:
     mosaic: float = 1.0
     mixup: float = 0.15
     copy_paste: float = 0.15
+    zoom_in_factor: float = 1.5
+    zoom_out_factor: float = 0.5
 
     close_mosaic: int = 10
 
