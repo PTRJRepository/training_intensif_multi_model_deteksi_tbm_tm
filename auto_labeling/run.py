@@ -20,6 +20,7 @@ def main():
     
     current_dir = os.path.dirname(os.path.abspath(__file__))
     app_dir = os.path.join(current_dir, "python_app")
+    frontend_dist_dir = os.path.join(current_dir, "frontend", "dist")
     
     try:
         import fastapi
@@ -33,6 +34,7 @@ def main():
         return
 
     print(f"📍 Server root: {app_dir}")
+    print(f"🎨 Frontend dist: {frontend_dist_dir}")
     print(f"🌍 App is available at:")
     print(f"   - Local:   http://localhost:8000")
     print(f"   - Network: http://{local_ip}:8000")
@@ -47,7 +49,7 @@ def main():
             host="0.0.0.0", 
             port=8000,
             reload=True,
-            reload_dirs=[app_dir],
+            reload_dirs=[app_dir, frontend_dist_dir],
             log_level="info"
         )
     except KeyboardInterrupt:

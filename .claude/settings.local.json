@@ -11,7 +11,8 @@
       "Bash(cp dist/assets/*.js ../python_app/static/assets/)",
       "Bash(ls ../python_app/static/assets/*.js)",
       "Bash(findstr \":5000\")",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(rm *)"
     ]
   }
 }

@@ -71,7 +71,7 @@ const ImageCanvas: React.FC<Props> = ({ imageInfo, points, setPoints, onAutoDete
       ctx.translate(position.x, position.y);
       ctx.scale(scale, scale);
 
-      ctx.fillStyle = '#22c55e';
+      ctx.fillStyle = '#ff2d2d';
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1.5 / scale;
 

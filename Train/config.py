@@ -5,7 +5,7 @@ Focus: High recall, high detection capability for small objects.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 
 @dataclass
@@ -40,6 +40,7 @@ class TrainingConfig:
     epochs: int = 350
     batch: int = 4
     device: str = 'cpu'
+    amp: Optional[bool] = None
 
     optimizer: Literal['SGD', 'Adam', 'AdamW'] = 'AdamW'
     lr0: float = 0.001
@@ -98,11 +99,23 @@ class ProjectConfig:
     save_dir: Path = Path(__file__).parent / "runs"
     exist_ok: bool = True  # Overwrite existing
 
+    # Pre-trained / fine-tuned model paths
+    pretrained_model_path: Path = Path(__file__).parent / "runs" / "model_fine_tuning_15_04" / "weights" / "best.pt"
+    fine_tuned_models: dict = field(default_factory=lambda: {
+        'ft_15_04': Path(__file__).parent / "runs" / "model_fine_tuning_15_04" / "weights" / "best.pt",
+        'ft2_yolo11s_640': Path(__file__).parent / "fine_tuning" / "ft2_yolo11s_640" / "weights" / "best.pt",
+    })
+
     def __post_init__(self):
         # Convert to forward slashes for Windows compatibility
         save_str = str(self.save_dir).replace('\\', '/')
         self.save_dir = Path(save_str)
         self.experiment_name = str(self.experiment_name).replace('\\', '/')
+        self.pretrained_model_path = Path(str(self.pretrained_model_path).replace('\\', '/'))
+        self.fine_tuned_models = {
+            k: Path(str(v).replace('\\', '/'))
+            for k, v in self.fine_tuned_models.items()
+        }
 
 
 def get_config() -> tuple:
@@ -133,6 +146,9 @@ def print_config(model: ModelConfig, dataset: DatasetConfig,
     print(f"\n[TRAINING]")
     print(f"  Epochs: {training.epochs}")
     print(f"  Batch size: {training.batch}")
+    print(f"  Device: {training.device}")
+    print(f"  AMP: {training.amp}")
+    print(f"  Workers: {training.workers}")
     print(f"  Optimizer: {training.optimizer}")
     print(f"  Initial LR: {training.lr0}")
     print(f"  Mosaic: {training.mosaic} | MixUp: {training.mixup} | CopyPaste: {training.copy_paste}")

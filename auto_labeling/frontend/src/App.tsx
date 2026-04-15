@@ -1,10 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { api, downloadShapefileFromBlob, type ModelInfo } from './api';
+import { api, buildDetectFullUrl, downloadShapefileFromBlob, type ModelInfo } from './api';
 import { TreePine, Save, Download, Crop, Play, X, RotateCcw, ZoomIn, Eye, CheckCircle2, AlertCircle, Layers, EyeOff, Trash2, Upload, FolderOpen } from 'lucide-react';
 
 export interface DetectionPoint { x: number; y: number; label: string; conf?: number; }
 export interface ImageInfo { name: string; path: string; width: number; height: number; }
 export interface Layer { id: string; name: string; points: DetectionPoint[]; visible: boolean; color: string; }
+
+const UI_BUILD_TAG = 'UI FAST 2026-04-15 23:00';
+const DEBUG_PREFIX = '[AUTO-LABEL DEBUG]';
+const DEBUG_ENABLED = window.location.search.includes('debug=1') || window.localStorage.getItem('autoLabelDebug') === '1';
+
+const debugInfo = (message: string, payload?: unknown) => {
+  if (!DEBUG_ENABLED) return;
+  console.info(`${DEBUG_PREFIX} ${message}`, payload ?? '');
+};
+
+const debugError = (message: string, payload?: unknown) => {
+  if (!DEBUG_ENABLED) return;
+  console.error(`${DEBUG_PREFIX} ${message}`, payload ?? '');
+};
 
 const App: React.FC = () => {
   const [images, setImages] = useState<any[]>([]);
@@ -16,6 +30,8 @@ const App: React.FC = () => {
   const [detecting, setDetecting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [scanningBox, setScanningBox] = useState<number[] | null>(null);
+  const scanningBoxRef = useRef<number[] | null>(null);
+  const scanningBoxFrameRef = useRef<number | null>(null);
   const [progress, setProgress] = useState(0);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [autoBestByClass, setAutoBestByClass] = useState<Record<string, string | null>>({ tbm: null, tm: null });
@@ -45,6 +61,7 @@ const App: React.FC = () => {
     tileSize: 640,
     overlap: 0.25,
     imgsz: 640,
+    zoomScales: '1',
     dbscanEps: 12.0,
     clusterMethod: 'hybrid',
     maxPasses: 2,
@@ -63,6 +80,31 @@ const App: React.FC = () => {
   const saveToHistory = (currentPoints: DetectionPoint[]) => {
     setPointHistory(prev => [...prev.slice(-20), [...currentPoints]]); // Keep last 20 states
   };
+
+  const updateScanningBox = useCallback((nextBox: number[] | null) => {
+    const normalizedBox = nextBox ? [...nextBox] : null;
+    const currentBox = scanningBoxRef.current;
+    const sameBox =
+      (!normalizedBox && !currentBox) ||
+      (!!normalizedBox && !!currentBox && normalizedBox.length === currentBox.length && normalizedBox.every((value, index) => value === currentBox[index]));
+
+    scanningBoxRef.current = normalizedBox;
+    if (sameBox) return;
+
+    if (scanningBoxFrameRef.current !== null) return;
+    scanningBoxFrameRef.current = window.requestAnimationFrame(() => {
+      scanningBoxFrameRef.current = null;
+      setScanningBox(scanningBoxRef.current ? [...scanningBoxRef.current] : null);
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (scanningBoxFrameRef.current !== null) {
+        window.cancelAnimationFrame(scanningBoxFrameRef.current);
+      }
+    };
+  }, []);
 
   // Delete selected point
   const handleDeleteSelected = () => {
@@ -88,6 +130,21 @@ const App: React.FC = () => {
   const isDragging = useRef(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
+  // Performance optimization: refs for smooth rendering
+  const pointsRef = useRef<DetectionPoint[]>([]);
+  const layersRef = useRef<Layer[]>([]);
+  const detectingRef = useRef(false);
+  const polygonRef = useRef<[number, number][]>([]);
+  const selectionModeRef = useRef(false);
+  const mousePosRef = useRef<[number, number] | null>(null);
+  const roiImageRef = useRef<{el: HTMLImageElement, x: number, y: number, w: number, h: number} | null>(null);
+  const selectedPointIdxRef = useRef<number | null>(null);
+  const [liveDetectedCount, setLiveDetectedCount] = useState(0);
+  
+  // Throttling for point updates
+  const pendingPointsRef = useRef<DetectionPoint[] | null>(null);
+  const pointsFlushTimeoutRef = useRef<number | null>(null);
+
   useEffect(() => {
     loadImages();
     loadModels();
@@ -107,6 +164,47 @@ const App: React.FC = () => {
   useEffect(() => {
     offsetRef.current = offset;
   }, [offset]);
+
+  // Sync refs for smooth rendering
+  useEffect(() => {
+    pointsRef.current = points;
+  }, [points]);
+
+  useEffect(() => {
+    layersRef.current = layers;
+  }, [layers]);
+
+  useEffect(() => {
+    detectingRef.current = detecting;
+  }, [detecting]);
+
+  useEffect(() => {
+    polygonRef.current = polygon;
+  }, [polygon]);
+
+  useEffect(() => {
+    debugInfo(`build=${UI_BUILD_TAG}`, { debug: DEBUG_ENABLED ? 'on' : 'off' });
+  }, []);
+
+  useEffect(() => {
+    selectionModeRef.current = selectionMode;
+  }, [selectionMode]);
+
+  useEffect(() => {
+    mousePosRef.current = mousePos;
+  }, [mousePos]);
+
+  useEffect(() => {
+    roiImageRef.current = roiImage;
+  }, [roiImage]);
+
+  useEffect(() => {
+    selectedPointIdxRef.current = selectedPointIdx;
+  }, [selectedPointIdx]);
+
+  useEffect(() => {
+    scanningBoxRef.current = scanningBox;
+  }, [scanningBox]);
 
   const classModels = useMemo(() => {
     const filtered = models.filter(
@@ -198,7 +296,7 @@ const App: React.FC = () => {
   };
 
   const handleSelectImage = async (img: any) => {
-    setLoading('Loading Preview...'); setPoints([]); setImgElement(null); setScanningBox(null); setPolygon([]); setRoiImage(null); setProgress(0);
+    setLoading('Loading Preview...'); setPoints([]); setImgElement(null); updateScanningBox(null); setPolygon([]); setRoiImage(null); setProgress(0);
     try {
       const infoResp = await api.getImageInfo(img.path);
       const info = infoResp.data;
@@ -221,13 +319,14 @@ const App: React.FC = () => {
     } catch (err) { setStatusMsg('Load error'); setLoading(null); }
   };
 
-  const drawCanvas = useCallback(() => {
+  // RAF-based canvas drawing for smooth 60fps rendering using refs
+  const drawCanvasRAF = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !selectedImage) return;
+    const selImg = selectedImage;
+    if (!canvas || !ctx || !selImg) return;
     const dpr = window.devicePixelRatio || 1;
 
-    // Set canvas size first (before any transform)
     const displayWidth = canvas.clientWidth;
     const displayHeight = canvas.clientHeight;
     if (canvas.width !== displayWidth * dpr || canvas.height !== displayHeight * dpr) {
@@ -235,102 +334,109 @@ const App: React.FC = () => {
       canvas.height = displayHeight * dpr;
     }
 
-    // Apply DPR scale - all drawing happens in CSS pixels
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.imageSmoothingEnabled = scale < 2.5;
+    ctx.imageSmoothingEnabled = scaleRef.current < 2.5;
 
-    // Clear and fill background
     ctx.clearRect(0, 0, displayWidth, displayHeight);
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, displayWidth, displayHeight);
 
-    // Apply world transform for image/detection drawing
     ctx.save();
-    ctx.translate(offset.x, offset.y);
-    ctx.scale(scale, scale);
+    ctx.translate(offsetRef.current.x, offsetRef.current.y);
+    ctx.scale(scaleRef.current, scaleRef.current);
 
-    if (imgElement) ctx.drawImage(imgElement, 0, 0, selectedImage.width, selectedImage.height);
-    if (roiImage) ctx.drawImage(roiImage.el, roiImage.x, roiImage.y, roiImage.w, roiImage.h);
+    if (imgElement) ctx.drawImage(imgElement, 0, 0, selImg.width, selImg.height);
+    if (roiImageRef.current) ctx.drawImage(roiImageRef.current.el, roiImageRef.current.x, roiImageRef.current.y, roiImageRef.current.w, roiImageRef.current.h);
 
-    if (detecting && scanningBox) {
-      ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3 / scale;
-      ctx.strokeRect(scanningBox[0], scanningBox[1], scanningBox[2], scanningBox[3]);
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.15)'; ctx.fillRect(scanningBox[0], scanningBox[1], scanningBox[2], scanningBox[3]);
+    if (detectingRef.current && scanningBoxRef.current) {
+      const sb = scanningBoxRef.current;
+      ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3 / scaleRef.current;
+      ctx.strokeRect(sb[0], sb[1], sb[2], sb[3]);
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.15)'; ctx.fillRect(sb[0], sb[1], sb[2], sb[3]);
     }
 
-    if (polygon.length > 0) {
-      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2 / scale; ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+    const poly = polygonRef.current;
+    if (poly.length > 0) {
+      ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2 / scaleRef.current; ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
       ctx.beginPath();
-      ctx.moveTo(polygon[0][0], polygon[0][1]);
-      for (let i = 1; i < polygon.length; i++) {
-        ctx.lineTo(polygon[i][0], polygon[i][1]);
-      }
-      if (selectionMode && mousePos) {
-        ctx.lineTo(mousePos[0], mousePos[1]);
-      }
-      if (!selectionMode && polygon.length > 2) ctx.closePath();
+      ctx.moveTo(poly[0][0], poly[0][1]);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
+      if (selectionModeRef.current && mousePosRef.current) ctx.lineTo(mousePosRef.current[0], mousePosRef.current[1]);
+      if (!selectionModeRef.current && poly.length > 2) ctx.closePath();
       ctx.stroke();
-      if (!selectionMode && polygon.length > 2) ctx.fill();
-
-      polygon.forEach(p => {
-        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(p[0], p[1], 4/scale, 0, Math.PI*2); ctx.fill();
-      });
+      if (!selectionModeRef.current && poly.length > 2) ctx.fill();
+      poly.forEach(p => { ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(p[0], p[1], 4/scaleRef.current, 0, Math.PI*2); ctx.fill(); });
     }
 
-    // Draw imported layers (behind main points)
-    const layerRadius = Math.max(1.5, 4.0 / scale);
-    layers.forEach(layer => {
+    const layerRadius = Math.max(1.5, 4.0 / scaleRef.current);
+    const allLayers = layersRef.current;
+    allLayers.forEach(layer => {
       if (!layer.visible || layer.points.length === 0) return;
-      
-      // Parse layer color for fill and stroke
-      ctx.fillStyle = layer.color;
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.0 / scale;
-      
+      ctx.fillStyle = layer.color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.0 / scaleRef.current;
       layer.points.forEach((p: DetectionPoint) => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, layerRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x, p.y, layerRadius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       });
     });
 
-    if (points.length > 0) {
-      const radius = Math.max(1.2, 3.0 / scale);
-      points.forEach((p, idx) => {
-        const isSelected = idx === selectedPointIdx;
-        const isManual = p.label === 'manual' || p.label === 'manual_tree';
-        
-        if (isManual) {
-          // Manual points: yellow with blue outline
-          ctx.fillStyle = '#eab308'; 
-          ctx.strokeStyle = '#3b82f6';
-          ctx.lineWidth = (isSelected ? 2.5 : 1.5) / scale;
-        } else {
-          // Detected points: green with white outline
-          ctx.fillStyle = '#22c55e';
-          ctx.strokeStyle = isSelected ? '#ef4444' : '#fff';
-          ctx.lineWidth = (isSelected ? 2.5 : 0.8) / scale;
-        }
-        
-        ctx.beginPath(); 
-        ctx.arc(p.x, p.y, isSelected ? radius * 1.5 : radius, 0, Math.PI * 2); 
-        ctx.fill(); 
-        ctx.stroke();
-        
-        // Draw label badge for selected manual point
-        if (isSelected && isManual) {
-          ctx.fillStyle = '#3b82f6';
-          ctx.beginPath();
-          ctx.arc(p.x, p.y - radius - 3/scale, 5/scale, 0, Math.PI * 2);
-          ctx.fill();
-        }
+    const allPoints = pointsRef.current;
+    if (allPoints.length > 0) {
+      const radius = Math.max(1.8, 4.2 / scaleRef.current);
+      const selIdx = selectedPointIdxRef.current;
+      
+      // Batch all detected points first (red)
+      ctx.fillStyle = '#ff2d2d'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2 / scaleRef.current;
+      ctx.beginPath();
+      allPoints.forEach((p, idx) => {
+        if (p.label === 'manual' || p.label === 'manual_tree') return;
+        const r = idx === selIdx ? radius * 1.5 : radius;
+        ctx.moveTo(p.x + r, p.y);
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       });
+      ctx.fill(); ctx.stroke();
+      
+      // Batch all manual points (yellow with blue outline)
+      ctx.fillStyle = '#eab308'; ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 1.5 / scaleRef.current;
+      ctx.beginPath();
+      allPoints.forEach((p, idx) => {
+        if (p.label !== 'manual' && p.label !== 'manual_tree') return;
+        const r = idx === selIdx ? radius * 1.5 : radius;
+        ctx.moveTo(p.x + r, p.y);
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      });
+      ctx.fill(); ctx.stroke();
+      
+      // Selected point badge
+      if (selIdx !== null && (allPoints[selIdx].label === 'manual' || allPoints[selIdx].label === 'manual_tree')) {
+        const p = allPoints[selIdx];
+        ctx.fillStyle = '#3b82f6';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y - radius - 3/scaleRef.current, 5/scaleRef.current, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
-  }, [selectedImage, imgElement, points, layers, scale, offset, detecting, scanningBox, polygon, selectionMode, mousePos, roiImage, selectedPointIdx]);
+  }, [imgElement, selectedImage]);
 
-  useEffect(() => { drawCanvas(); }, [drawCanvas]);
+  const drawFrameRef = useRef<number | null>(null);
+  const scheduleCanvasDraw = useCallback(() => {
+    if (drawFrameRef.current !== null) return;
+    drawFrameRef.current = window.requestAnimationFrame(() => {
+      drawFrameRef.current = null;
+      drawCanvasRAF();
+    });
+  }, [drawCanvasRAF]);
+
+  useEffect(() => {
+    scheduleCanvasDraw();
+  }, [scheduleCanvasDraw, scale, offset, points, layers, detecting, polygon, selectionMode, mousePos, roiImage, selectedPointIdx, scanningBox, viewportWidth]);
+
+  useEffect(() => {
+    return () => {
+      if (drawFrameRef.current !== null) {
+        window.cancelAnimationFrame(drawFrameRef.current);
+      }
+    };
+  }, []);
 
   const handleWheelNative = useCallback((e: WheelEvent) => {
     e.preventDefault();
@@ -456,7 +562,31 @@ const App: React.FC = () => {
     setTimeout(handleAutoDetect, 100);
   };
 
-  const [currentPass, setCurrentPass] = useState<{current: number, total: number} | null>(null);
+  const [, setCurrentPass] = useState<{current: number, total: number} | null>(null);
+
+  const buildPointKey = (point: DetectionPoint) => {
+    const modelId = (point as any).model_id || '';
+    const conf = typeof point.conf === 'number' ? point.conf.toFixed(4) : '';
+    return [
+      Math.round(point.x),
+      Math.round(point.y),
+      point.label || 'palm_tree',
+      conf,
+      modelId,
+    ].join(':');
+  };
+
+  const dedupePoints = (items: DetectionPoint[]) => {
+    const seen = new Set<string>();
+    const deduped: DetectionPoint[] = [];
+    for (const item of items) {
+      const key = buildPointKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+    }
+    return deduped;
+  };
 
   const handleAutoDetect = async () => {
     if (!selectedImage) return;
@@ -472,19 +602,57 @@ const App: React.FC = () => {
     saveToHistory(points);
     // Keep manual points separate
     const manualPoints = points.filter(p => p.label === 'manual' || p.label === 'manual_tree');
+    const baseManualPoints = [...manualPoints];
+    let streamedDetectedPoints: DetectionPoint[] = [];
+    let lastProgressValue = 0;
+    let lastPassShown = -1;
+    let lastCountStatusAt = 0;
+
+    const pushProgress = (value: number) => {
+      const normalized = Math.max(0, Math.min(1, Number(value || 0)));
+      if (normalized >= 0.999 || normalized - lastProgressValue >= 0.02) {
+        lastProgressValue = normalized;
+        setProgress(normalized);
+      }
+    };
     
     setDetecting(true); setPoints(manualPoints); setProgress(0); setCurrentPass(null);
-    setStatusMsg(`Scanning with [${inferClass.toUpperCase()}] ${effectiveModelInfo?.name || effectiveModelId}...`);
+    setStatusMsg(`Scanning with [${inferClass.toUpperCase()}] ${effectiveModelInfo?.name || effectiveModelId} | zoom ${detectSettings.zoomScales || '1'}...`);
     
     abortControllerRef.current = new AbortController();
     try {
-      let url = `/api/detect-full?path=${encodeURIComponent(selectedImage.path)}&conf=${detectSettings.conf}&tile_size=${detectSettings.tileSize}&overlap=${detectSettings.overlap}&imgsz=${detectSettings.imgsz}&infer_class=${inferClass}&dbscan_eps=${detectSettings.dbscanEps}&cluster_method=${encodeURIComponent(detectSettings.clusterMethod)}&max_passes=${detectSettings.maxPasses}&min_new_points=${detectSettings.minNewPoints}&batch_size=${detectSettings.batchSize}&model_ids=${encodeURIComponent(effectiveModelId)}`;
-      if (polygon.length > 2) url += `&polygon=${encodeURIComponent(JSON.stringify(polygon))}`;
+      const url = buildDetectFullUrl({
+        path: selectedImage.path,
+        conf: detectSettings.conf,
+        tileSize: detectSettings.tileSize,
+        overlap: detectSettings.overlap,
+        imgsz: detectSettings.imgsz,
+        modelIds: effectiveModelId ? [effectiveModelId] : undefined,
+        zoomScales: detectSettings.zoomScales,
+        dbscanEps: detectSettings.dbscanEps,
+        clusterMethod: detectSettings.clusterMethod,
+        maxPasses: detectSettings.maxPasses,
+        minNewPoints: detectSettings.minNewPoints,
+        batchSize: detectSettings.batchSize,
+        inferClass,
+        polygon: polygon.length > 2 ? polygon : undefined,
+      });
+      debugInfo('detect request', {
+        build: UI_BUILD_TAG,
+        image: selectedImage.path,
+        modelId: effectiveModelId,
+        inferClass,
+        polygonPoints: polygon.length,
+        settings: detectSettings,
+        url,
+      });
       const response = await fetch(url, { method: 'POST', signal: abortControllerRef.current.signal });
       if (!response.ok || !response.body) {
         throw new Error(`HTTP ${response.status}`);
       }
+      debugInfo('detect response ok', { status: response.status, url });
       const reader = response.body!.getReader(); const decoder = new TextDecoder(); let buffer = '';
+      let debugPointEvents = 0;
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
         buffer += decoder.decode(value, { stream: true });
@@ -494,33 +662,119 @@ const App: React.FC = () => {
           try {
             const data = JSON.parse(line.replace('data: ', ''));
             if (data.type === 'window') { 
-              setScanningBox(data.window); 
-              setProgress(data.progress || 0); 
-              if (data.pass) {
+              updateScanningBox(data.window); 
+              pushProgress(data.progress || 0);
+              if (data.pass && data.pass !== lastPassShown) {
+                lastPassShown = data.pass;
                 setCurrentPass({ current: data.pass, total: data.total_passes || 1 });
                 setStatusMsg(`Pass ${data.pass}/${data.total_passes || 1} | [${inferClass.toUpperCase()}] ${effectiveModelInfo?.name || effectiveModelId}...`);
               }
             }
-            else if (data.type === 'final') {
-              const detectedPoints = (data.points || []).map((p: any) => ({
-                ...p,
-                label: p.label || 'palm_tree'
-              }));
-              setPoints([...manualPoints, ...detectedPoints]); 
-              setScanningBox(null); 
-              setCurrentPass(null);
-              setStatusMsg(`[${inferClass.toUpperCase()}] ${effectiveModelInfo?.name || effectiveModelId}: ${detectedPoints.length} detected + ${manualPoints.length} manual`); 
+            else if (data.type === 'coverage') {
+              const coverage = data.coverage;
+              if (coverage) {
+                debugInfo('coverage event', coverage);
+                const pct = Math.round(((coverage.safe_coverage_ratio ?? coverage.coverage_ratio ?? 0) as number) * 10000) / 100;
+                const uncovered = Number(coverage.safe_uncovered_pixels ?? coverage.uncovered_pixels ?? 0);
+                setStatusMsg(
+                  uncovered > 0
+                    ? `ROI safe coverage ${pct}% | gap pixels: ${uncovered}`
+                    : `ROI safe coverage ${pct}% | seluruh ROI tersapu sliding`
+                );
+              }
             }
-          } catch (e) { }
+            else if (data.type === 'points') {
+              debugPointEvents += 1;
+              const incomingPoints = dedupePoints(
+                (data.points || []).map((p: any) => ({
+                  ...p,
+                  label: p.label || 'palm_tree',
+                }))
+              );
+              debugInfo('points event', {
+                event: debugPointEvents,
+                batch: incomingPoints.length,
+                totalBeforeMerge: streamedDetectedPoints.length,
+                pass: data.pass,
+                modelId: data.model_id,
+                zoomScale: data.zoom_scale,
+              });
+              if (incomingPoints.length > 0) {
+                streamedDetectedPoints = dedupePoints([...streamedDetectedPoints, ...incomingPoints]);
+                // Throttled update: update state every 100ms to avoid choppy UI
+                pendingPointsRef.current = [...baseManualPoints, ...streamedDetectedPoints];
+                if (pointsFlushTimeoutRef.current === null) {
+                  pointsFlushTimeoutRef.current = window.setTimeout(() => {
+                    if (pendingPointsRef.current !== null) {
+                      setPoints(pendingPointsRef.current);
+                      pendingPointsRef.current = null;
+                    }
+                    setLiveDetectedCount(streamedDetectedPoints.length);
+                    pointsFlushTimeoutRef.current = null;
+                  }, 100);
+                }
+              }
+              pushProgress(data.progress || 0);
+              if (data.pass && data.pass !== lastPassShown) {
+                lastPassShown = data.pass;
+                setCurrentPass({ current: data.pass, total: data.total_passes || 1 });
+              }
+              if (data.pass) {
+                const now = Date.now();
+                if (now - lastCountStatusAt >= 300) {
+                  lastCountStatusAt = now;
+                  setStatusMsg(`Pass ${data.pass}/${data.total_passes || 1} | ${baseManualPoints.length + streamedDetectedPoints.length} found`);
+                }
+              }
+            }
+            else if (data.type === 'final') {
+              // Flush any pending points first
+              if (pointsFlushTimeoutRef.current !== null) {
+                clearTimeout(pointsFlushTimeoutRef.current);
+                pointsFlushTimeoutRef.current = null;
+              }
+              const detectedPoints = dedupePoints(
+                (data.points || []).map((p: any) => ({
+                  ...p,
+                  label: p.label || 'palm_tree'
+                }))
+              );
+              streamedDetectedPoints = detectedPoints;
+              debugInfo('final event', {
+                detected: detectedPoints.length,
+                manual: baseManualPoints.length,
+                inferClass,
+                modelId: effectiveModelId,
+              });
+              setPoints([...baseManualPoints, ...detectedPoints]);
+              setLiveDetectedCount(detectedPoints.length);
+              updateScanningBox(null); 
+              setCurrentPass(null);
+              setStatusMsg(`[${inferClass.toUpperCase()}] ${effectiveModelInfo?.name || effectiveModelId}: ${detectedPoints.length} detected + ${baseManualPoints.length} manual`); 
+            }
+            else if (data.type === 'error') {
+              debugError('stream error event', data);
+              throw new Error(data.message || 'Detection stream error');
+            }
+            } catch (e) {
+              debugError('parse/event failure', e);
+              throw e;
+            }
+          }
         }
+      } catch (err: any) {
+        debugError('detect failed', err);
+        setStatusMsg(err?.name === 'AbortError' ? 'Stopped.' : err?.message || 'Error');
       }
-    } catch (err: any) { setStatusMsg(err.name === 'AbortError' ? 'Stopped.' : 'Error'); }
-    finally { setDetecting(false); setScanningBox(null); setCurrentPass(null); abortControllerRef.current = null; }
+       finally {
+        debugInfo('detect finished', { activeImage: selectedImage.path, inferClass });
+        setDetecting(false); updateScanningBox(null); setCurrentPass(null); abortControllerRef.current = null; }
   };
 
   const handleStopDetection = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      updateScanningBox(null);
       setStatusMsg('Stopping detection...');
     }
   };
@@ -628,7 +882,10 @@ const App: React.FC = () => {
       <div style={{ width: isCompact ? '100%' : 300, maxHeight: isCompact ? '42vh' : '100vh', background: '#111', borderRight: isCompact ? 'none' : '1px solid #222', borderTop: isCompact ? '1px solid #222' : 'none', display: 'flex', flexDirection: 'column', order: isCompact ? 2 : 1 }}>
         <div style={{ padding: 16, borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 36, height: 36, background: '#16a34a', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><TreePine size={18} color="white" /></div>
-          <div><div style={{ fontWeight: 700, fontSize: 16 }}>Rebinmas Tree Detection</div></div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>Rebinmas Tree Detection</div>
+            <div style={{ fontSize: 10, color: '#ff6b6b', fontWeight: 700 }}>{UI_BUILD_TAG}</div>
+          </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
           <div style={{ padding: '8px 16px', fontSize: 11, color: '#888', textTransform: 'uppercase', fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
@@ -656,8 +913,14 @@ const App: React.FC = () => {
         {selectedImage && (
           <div style={{ padding: 16, borderTop: '1px solid #222', background: '#151515', overflowY: 'auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-              <div style={{ background: '#1a1a1a', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #222' }}><div style={{ fontSize: 22, fontWeight: 700, color: '#22c55e' }}>{points.length}</div><div style={{ fontSize: 10, color: '#666' }}>Trees</div></div>
-              <div style={{ background: '#1a1a1a', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #222' }}><div style={{ fontSize: 11, color: '#888' }}>{selectedImage.width}x{selectedImage.height}</div><div style={{ fontSize: 10, color: '#666' }}>Resolution</div></div>
+              <div style={{ background: '#1a1a1a', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #222' }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#ef4444' }}>{points.length}</div>
+                <div style={{ fontSize: 10, color: '#666' }}>Total Trees</div>
+              </div>
+              <div style={{ background: '#1a1a1a', padding: 12, borderRadius: 8, textAlign: 'center', border: '1px solid #222' }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#ef4444' }}>{liveDetectedCount}</div>
+                <div style={{ fontSize: 10, color: '#666' }}>Detected</div>
+              </div>
             </div>
             <div style={{ background: '#1a1a1a', borderRadius: 8, padding: 8, marginBottom: 12, border: '1px solid #222' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 8, textAlign: 'center' }}>SELECTION (ROI)</div>
@@ -759,9 +1022,9 @@ const App: React.FC = () => {
                   <input type="range" min="320" max="1280" step="32" value={detectSettings.tileSize} onChange={e => setDetectSettings(s => ({...s, tileSize: parseInt(e.target.value)}))} style={{ width: '100%' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: '#888' }}>Overlap</span>
-                    <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.overlap}</span>
+                    <span style={{ fontSize: 10, color: '#ef4444' }}>{detectSettings.overlap}</span>
                   </div>
-                  <input type="range" min="0" max="0.5" step="0.05" value={detectSettings.overlap} onChange={e => setDetectSettings(s => ({...s, overlap: parseFloat(e.target.value)}))} style={{ width: '100%' }} />
+                  <input type="range" min="0" max="0.7" step="0.05" value={detectSettings.overlap} onChange={e => setDetectSettings(s => ({...s, overlap: parseFloat(e.target.value)}))} style={{ width: '100%' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: '#888' }}>Inference Size</span>
                     <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.imgsz}</span>
@@ -792,11 +1055,23 @@ const App: React.FC = () => {
                     <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.minNewPoints}</span>
                   </div>
                   <input type="range" min="0" max="20" step="1" value={detectSettings.minNewPoints} onChange={e => setDetectSettings(s => ({...s, minNewPoints: parseInt(e.target.value)}))} style={{ width: '100%' }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 10, color: '#888' }}>Batch Size</span>
-                    <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.batchSize}</span>
-                  </div>
-                  <input type="range" min="1" max="16" step="1" value={detectSettings.batchSize} onChange={e => setDetectSettings(s => ({...s, batchSize: parseInt(e.target.value)}))} style={{ width: '100%' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: '#888' }}>Batch Size</span>
+                      <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.batchSize}</span>
+                    </div>
+                    <input type="range" min="1" max="16" step="1" value={detectSettings.batchSize} onChange={e => setDetectSettings(s => ({...s, batchSize: parseInt(e.target.value)}))} style={{ width: '100%' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: '#888' }}>Zoom Scales</span>
+                      <span style={{ fontSize: 10, color: '#22c55e' }}>{detectSettings.zoomScales || '1'}</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={detectSettings.zoomScales}
+                      onChange={e => setDetectSettings(s => ({ ...s, zoomScales: e.target.value }))}
+                      placeholder="1,1.5,2"
+                      style={{ width: '100%', padding: '5px 6px', fontSize: 10, background: '#333', color: '#fff', border: '1px solid #444', borderRadius: 4 }}
+                    />
+                    <div style={{ fontSize: 9, color: '#666', marginTop: 2 }}>Comma-separated. `1` is always included by the backend.</div>
                 </div>
               )}
             </div>
@@ -999,7 +1274,7 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      <style>{` @keyframes spin { to { transform: rotate(360deg); } } button:hover:not(:disabled) { filter: brightness(1.2); } canvas { touch-action: none; } `}</style>
+<style>{` @keyframes spin { to { transform: rotate(360deg); } } button:hover:not(:disabled) { filter: brightness(1.2); } canvas { touch-action: none; } `}</style>
     </div>
   );
 };

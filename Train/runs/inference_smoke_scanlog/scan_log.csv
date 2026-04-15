@@ -1,0 +1,2 @@
+timestamp,image_index,total_images,image_name,image_path,tree_count,inference_time_sec,running_total,avg_inference_time_sec,eta_seconds
+2026-04-14T15:29:20,1,1,Atha_Kundo_tile_00125.jpg,Dataset\dataset_pakai_ini\images\val\Atha_Kundo_tile_00125.jpg,796,1.09979248046875,796,,

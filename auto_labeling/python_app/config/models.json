@@ -1,6 +1,26 @@
 {
   "models": [
     {
+      "id": "train_runs_model_fine_tuning_15_04_weights_best",
+      "name": "model_fine_tuning_15_04",
+      "path": "Train/runs/model_fine_tuning_15_04/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_model_fine_tuning_15_04_weights_last",
+      "name": "model_fine_tuning_15_04",
+      "path": "Train/runs/model_fine_tuning_15_04/weights/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
       "id": "train_runs_ft_yolo11s_640_v2_weights_last",
       "name": "ft_yolo11s_640_v2",
       "path": "Train/runs/ft_yolo11s_640_v2/weights/last.pt",
@@ -10,6 +30,7 @@
       "conf": 0.1,
       "imgsz": 640
     },
+
     {
       "id": "train_runs_ft_yolo11s_640_v2_weights_best",
       "name": "ft_yolo11s_640_v2",

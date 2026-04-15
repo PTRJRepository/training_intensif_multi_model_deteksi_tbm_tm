@@ -15,6 +15,7 @@ set BATCH=8
 set LR=0.01
 set IMG_SIZE=640
 set NAME=exp1_yolo11n_640
+set DEVICE=auto
 
 echo Konfigurasi default:
 echo   Model   : %MODEL%
@@ -22,6 +23,7 @@ echo   Epochs  : %EPOCHS%
 echo   Batch   : %BATCH%
 echo   LR      : %LR%
 echo   ImgSize : %IMG_SIZE%
+echo   Device  : %DEVICE%
 echo.
 
 echo Tekan ENTER untuk menggunakan default,
@@ -52,10 +54,11 @@ echo  Epochs: %EPOCHS%
 echo  Batch: %BATCH%
 echo  LR: %LR%
 echo  Name: %NAME%
+echo  Device: %DEVICE%
 echo ================================================
 echo.
 
-python Train/train.py --model %MODEL% --epochs %EPOCHS% --batch %BATCH% --lr %LR% --name %NAME%
+python Train/train.py --model %MODEL% --epochs %EPOCHS% --batch %BATCH% --lr %LR% --name %NAME% --device %DEVICE%
 
 echo.
 echo ================================================

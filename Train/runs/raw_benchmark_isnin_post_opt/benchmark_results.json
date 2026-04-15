@@ -1,0 +1,59 @@
+[
+  {
+    "model_id": "model_1_best",
+    "model_name": "ft_yolo11s_640_v2",
+    "model_path": "D:\\Gawean Rebinmas\\Tree Counting Project\\Training Deteksi Sawit Multi Model\\Train\\runs\\ft_yolo11s_640_v2\\weights\\best.pt",
+    "config": {
+      "conf": 0.02,
+      "tile_size": 640,
+      "overlap": 0.25,
+      "imgsz": 960,
+      "zoom_scales": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "cluster_method": "hybrid",
+      "dbscan_eps": 12.0,
+      "max_passes": 2,
+      "min_new_points": 2,
+      "batch_size": 8,
+      "config_id": "conf0.02_tile640_ov0.25_img960_zoom1-1p5-2_hybrid_eps12"
+    },
+    "aggregate": {
+      "macro_recall": 0.8531544597534445,
+      "macro_precision": 0.8503794723527286,
+      "macro_f1": 0.851764705882353,
+      "macro_count_accuracy": 0.9967367657722987,
+      "micro_recall": 0.8531544597534445,
+      "micro_precision": 0.8503794723527286,
+      "micro_f1": 0.851764705882353,
+      "micro_count_accuracy": 0.9967367657722987,
+      "mean_runtime_sec": 85.76441621780396,
+      "total_tp": 2353,
+      "total_fp": 414,
+      "total_fn": 405,
+      "total_gt": 2758,
+      "total_pred": 2767,
+      "total_count_error": 9,
+      "score": 0.888147600310242
+    },
+    "datasets": [
+      {
+        "tp": 2353,
+        "fp": 414,
+        "fn": 405,
+        "recall": 0.8531544597534445,
+        "precision": 0.8503794723527286,
+        "f1": 0.851764705882353,
+        "gt_count": 2758,
+        "pred_count": 2767,
+        "count_error": 9,
+        "count_accuracy": 0.9967367657722987,
+        "mean_match_distance_px": 3.2293606889566333,
+        "runtime_sec": 85.76441621780396,
+        "dataset_name": "Isnin_TBM"
+      }
+    ]
+  }
+]

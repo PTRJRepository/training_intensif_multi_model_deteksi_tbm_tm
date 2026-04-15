@@ -1,0 +1,14 @@
+[
+  {
+    "timestamp": "2026-04-14T15:29:20",
+    "image_index": 1,
+    "total_images": 1,
+    "image_name": "Atha_Kundo_tile_00125.jpg",
+    "image_path": "Dataset\\dataset_pakai_ini\\images\\val\\Atha_Kundo_tile_00125.jpg",
+    "tree_count": 796,
+    "inference_time_sec": 1.09979248046875,
+    "running_total": 796,
+    "avg_inference_time_sec": null,
+    "eta_seconds": null
+  }
+]

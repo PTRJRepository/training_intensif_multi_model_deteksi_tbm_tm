@@ -9,12 +9,12 @@ echo Konfigurasi:
 echo   Model    : yolo11n (nano - cepat, ringan)
 echo   Epochs   : 150
 echo   Batch    : 8
-echo   Device   : CPU
+echo   Device   : Auto (GPU jika CUDA tersedia)
 echo   Img Size : 640
 echo.
 
 cd /d "%~dp0..\"
-python Train/train.py --model yolo11n --epochs 150 --batch 8
+python Train/train.py --model yolo11n --epochs 150 --batch 8 --device auto
 
 echo.
 echo ================================================

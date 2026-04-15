@@ -5,20 +5,48 @@ import zipfile
 import glob
 import re
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body, Request
 from typing import Any, Dict, Iterable, List, Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse, Response, HTMLResponse
 import rasterio
 from io import BytesIO
 from PIL import Image
 import numpy as np
+from urllib.parse import quote
 
 from core.detector import MultiModelDetector, TreeDetector
 from core.exporter import Exporter
 
 app = FastAPI(title="Tree Counting Auto-Labeling API")
+
+
+DEBUG_ENABLED = os.environ.get("AUTO_LABEL_DEBUG", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+
+@app.on_event("startup")
+async def startup_sync_frontend_build() -> None:
+    active_static_dir = get_active_static_dir()
+    print(
+        f"[FRONTEND] debug={'on' if DEBUG_ENABLED else 'off'} | frontend_dist={FRONTEND_DIST_DIR} | serving={active_static_dir or 'none'}"
+    )
+
+
+@app.middleware("http")
+async def disable_frontend_cache(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path or ""
+    if path == "/" or path.endswith((".html", ".js", ".css", ".map", ".svg")):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 # Enable CORS for development
 app.add_middleware(
@@ -31,6 +59,9 @@ app.add_middleware(
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PYTHON_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+AUTO_LABELING_DIR = os.path.dirname(PYTHON_APP_DIR)
+FRONTEND_DIR = os.path.join(AUTO_LABELING_DIR, "frontend")
+FRONTEND_DIST_DIR = os.path.join(FRONTEND_DIR, "dist")
 MODEL_CONFIG_DIR = os.path.join(PYTHON_APP_DIR, "config")
 MODEL_CONFIG_PATH = os.path.join(MODEL_CONFIG_DIR, "models.json")
 
@@ -47,6 +78,43 @@ os.makedirs(MODEL_CONFIG_DIR, exist_ok=True)
 # Cache for discovered images
 _discovered_images = None
 SUPPORTED_INFER_CLASSES = {"tbm", "tm"}
+
+
+def debug_log(scope: str, message: str) -> None:
+    if DEBUG_ENABLED:
+        print(f"[DEBUG:{scope}] {message}")
+
+
+def get_active_static_dir() -> Optional[str]:
+    if os.path.exists(os.path.join(FRONTEND_DIST_DIR, "index.html")):
+        return FRONTEND_DIST_DIR
+    return None
+
+
+def _asset_version(path: str) -> str:
+    try:
+        return str(int(os.path.getmtime(path)))
+    except OSError:
+        return "0"
+
+
+def _build_index_html(static_dir: str) -> str:
+    index_path = os.path.join(static_dir, "index.html")
+    with open(index_path, "r", encoding="utf-8") as file:
+        html = file.read()
+
+    asset_candidates = [
+        os.path.join(static_dir, "assets"),
+        static_dir,
+    ]
+    version = max(_asset_version(path) for path in asset_candidates)
+
+    html = re.sub(
+        r'((?:src|href)="\./[^"?]+)(")',
+        lambda match: f'{match.group(1)}?v={quote(version)}{match.group(2)}',
+        html,
+    )
+    return html
 
 
 def _load_whitelist_set():
@@ -227,7 +295,9 @@ def _normalize_model_entry(entry: Dict[str, Any], index: int) -> Dict[str, Any]:
     if class_tag_raw:
         class_tag = _normalize_class_tag(class_tag_raw)
     else:
-        infer_text = f"{model_name_raw} {model_path_raw} {entry.get('label', '')}".lower()
+        infer_text = (
+            f"{model_name_raw} {model_path_raw} {entry.get('label', '')}".lower()
+        )
         has_tbm = re.search(r"(^|[^a-z0-9])tbm([^a-z0-9]|$)", infer_text) is not None
         has_tm = re.search(r"(^|[^a-z0-9])tm([^a-z0-9]|$)", infer_text) is not None
         if has_tbm:
@@ -358,6 +428,41 @@ def _parse_model_ids(model_ids_raw: Optional[str]) -> Optional[List[str]]:
     return parsed_ids or None
 
 
+def _parse_zoom_scales(zoom_scales_raw: Optional[str]) -> Optional[List[float]]:
+    if not zoom_scales_raw:
+        return None
+
+    value = zoom_scales_raw.strip()
+    if not value:
+        return None
+
+    parsed_scales: List[float] = []
+    if value.startswith("["):
+        try:
+            loaded = json.loads(value)
+            if isinstance(loaded, list):
+                for item in loaded:
+                    try:
+                        scale = float(item)
+                    except (TypeError, ValueError):
+                        continue
+                    if scale > 0:
+                        parsed_scales.append(scale)
+        except json.JSONDecodeError:
+            parsed_scales = []
+
+    if not parsed_scales:
+        for item in value.split(","):
+            try:
+                scale = float(item.strip())
+            except (TypeError, ValueError):
+                continue
+            if scale > 0:
+                parsed_scales.append(scale)
+
+    return parsed_scales or None
+
+
 def _build_models_response_payload() -> Dict[str, Any]:
     loaded_ids = set(detector.get_loaded_model_ids())
     errors = detector.get_model_errors()
@@ -387,7 +492,9 @@ def _build_models_response_payload() -> Dict[str, Any]:
         }
         models.append(model_payload)
 
-    auto_best_by_class: Dict[str, Optional[str]] = {k: None for k in SUPPORTED_INFER_CLASSES}
+    auto_best_by_class: Dict[str, Optional[str]] = {
+        k: None for k in SUPPORTED_INFER_CLASSES
+    }
     for class_tag in SUPPORTED_INFER_CLASSES:
         class_candidates = [
             item
@@ -401,7 +508,9 @@ def _build_models_response_payload() -> Dict[str, Any]:
             key=lambda item: float(item.get("modified_ts") or 0.0), reverse=True
         )
         if class_candidates:
-            auto_best_by_class[class_tag] = str(class_candidates[0].get("id", "")) or None
+            auto_best_by_class[class_tag] = (
+                str(class_candidates[0].get("id", "")) or None
+            )
 
     return {
         "models": models,
@@ -446,15 +555,15 @@ def _pick_effective_model_ids(
         and bool(item.get("loaded"))
         and bool(item.get("exists"))
     ]
-    
+
     if not class_candidates:
         return []
-        
+
     # Sort by modification time (newest first)
     class_candidates.sort(
         key=lambda item: float(item.get("modified_ts") or 0.0), reverse=True
     )
-    
+
     return [str(class_candidates[0].get("id", ""))]
 
 
@@ -548,10 +657,14 @@ def get_full_path(provided_path: str):
     """Utility to resolve paths safely - only allows discovered images."""
     discovered = discover_images()
     discovered_paths = {img["path"] for img in discovered}
+    debug_log("PATH", f"resolve request={provided_path}")
     if os.path.isabs(provided_path):
         if provided_path in discovered_paths and os.path.exists(provided_path):
+            debug_log("PATH", f"resolved ok={provided_path}")
             return provided_path
+        debug_log("PATH", f"forbidden path={provided_path}")
         raise HTTPException(status_code=403, detail="Path not allowed")
+    debug_log("PATH", f"not found path={provided_path}")
     raise HTTPException(status_code=404, detail="Image not found")
 
 
@@ -586,8 +699,17 @@ def get_cached_image_info(path: str):
 async def get_image_info(path: str):
     try:
         full_path = get_full_path(path)
-        return get_cached_image_info(full_path)
+        info = get_cached_image_info(full_path)
+        debug_log(
+            "IMAGE",
+            f"image-info ok path={full_path} size={info['width']}x{info['height']} bands={info['bands']}",
+        )
+        return info
+    except HTTPException:
+        debug_log("IMAGE", f"image-info http-error path={path}")
+        raise
     except Exception as e:
+        debug_log("IMAGE", f"image-info failed path={path} error={e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -697,6 +819,7 @@ async def run_full_detection(
     polygon: str = None,
     imgsz: int = 640,
     model_ids: Optional[str] = Query(default=None),
+    zoom_scales: Optional[str] = Query(default=None),
     infer_class: str = Query(default="tbm"),
     dbscan_eps: float = 12.0,
     cluster_method: str = "hybrid",
@@ -739,6 +862,7 @@ async def run_full_detection(
         actual_overlap = overlap / tile_size
 
     selected_model_ids = _parse_model_ids(model_ids)
+    parsed_zoom_scales = _parse_zoom_scales(zoom_scales)
     effective_model_ids = _pick_effective_model_ids(
         selected_model_ids, infer_class=infer_class
     )
@@ -748,12 +872,45 @@ async def run_full_detection(
             detail=f"No active model available for class '{_normalize_class_tag(infer_class)}'",
         )
 
+    coverage_stats = None
+    if scan_window or scan_polygon:
+        try:
+            debug_detector = TreeDetector.__new__(TreeDetector)
+            debug_detector.model_id = "coverage_debug"
+            debug_detector.label = "palm_tree"
+            coverage_stats = TreeDetector.get_tile_coverage_stats(
+                debug_detector,
+                full_path,
+                tile_size=tile_size,
+                overlap=actual_overlap,
+                scan_window=scan_window,
+                polygon=scan_polygon,
+                max_passes=max_passes,
+            )
+        except Exception as coverage_exc:
+            print(f"[DETECT-COVERAGE] Failed to compute coverage stats: {coverage_exc}")
+
     print(
-        f"[DETECT-STREAM] path={path}, window={scan_window}, poly={len(scan_polygon) if scan_polygon else 0}, tile_size={tile_size}, imgsz={imgsz}, infer_class={_normalize_class_tag(infer_class)}, model_ids={effective_model_ids}, cluster_method={cluster_method}, max_passes={max_passes}, min_new_points={min_new_points}, batch_size={batch_size}"
+        f"[DETECT-STREAM] path={path}, window={scan_window}, poly={len(scan_polygon) if scan_polygon else 0}, tile_size={tile_size}, imgsz={imgsz}, infer_class={_normalize_class_tag(infer_class)}, model_ids={effective_model_ids}, zoom_scales={parsed_zoom_scales}, cluster_method={cluster_method}, max_passes={max_passes}, min_new_points={min_new_points}, batch_size={batch_size}"
     )
+    if coverage_stats is not None:
+        print(
+            "[DETECT-COVERAGE] "
+            f"ratio={coverage_stats['coverage_ratio']:.4f} "
+            f"covered={coverage_stats['covered_pixels']}/{coverage_stats['roi_pixels']} "
+            f"uncovered={coverage_stats['uncovered_pixels']} "
+            f"safe_ratio={coverage_stats.get('safe_coverage_ratio', coverage_stats['coverage_ratio']):.4f} "
+            f"safe_uncovered={coverage_stats.get('safe_uncovered_pixels', coverage_stats['uncovered_pixels'])} "
+            f"min={coverage_stats['min_coverage']} max={coverage_stats['max_coverage']}"
+        )
 
     async def event_generator():
+        points_events = 0
+        streamed_points = 0
         try:
+            if coverage_stats is not None:
+                debug_log("DETECT", f"emit coverage {coverage_stats}")
+                yield f"data: {json.dumps({'type': 'coverage', 'coverage': coverage_stats})}\n\n"
             for update in detector.predict_tiff_full(
                 full_path,
                 conf=conf,
@@ -768,10 +925,26 @@ async def run_full_detection(
                 max_passes=max_passes,
                 min_new_points=min_new_points,
                 batch_size=batch_size,
+                zoom_scales=parsed_zoom_scales,
             ):
+                update_type = str(update.get("type", "unknown"))
+                if update_type == "points":
+                    batch_count = len(update.get("points", []))
+                    points_events += 1
+                    streamed_points += batch_count
+                    debug_log(
+                        "DETECT",
+                        f"emit points event={points_events} batch={batch_count} streamed_total={streamed_points} model={update.get('model_id')} pass={update.get('pass')}",
+                    )
+                elif update_type == "final":
+                    debug_log(
+                        "DETECT",
+                        f"emit final total_found={len(update.get('points', []))} model={update.get('model_id')}",
+                    )
                 yield f"data: {json.dumps(update)}\n\n"
         except Exception as e:
             print(f"[STREAM-ERROR] {e}")
+            debug_log("DETECT", f"stream failed error={e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(
@@ -793,13 +966,97 @@ async def save_labels(path: str, data: list = Body(...)):
 
 @app.get("/api/load")
 async def load_labels(path: str):
-    """Load points from a local JSON file."""
+    """Load points from a local JSON file if it exists."""
     fname = path.replace(os.sep, "_").replace("/", "_") + ".json"
     save_path = os.path.join(SAVE_DIR, fname)
-    if os.path.exists(save_path):
-        with open(save_path, "r") as f:
-            return json.load(f)
-    return []
+    if not os.path.exists(save_path):
+        return []
+
+    with open(save_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@app.post("/api/detect-full-coverage")
+async def get_detection_coverage_map(
+    path: str,
+    tile_size: int = 640,
+    overlap: float = 0.5,
+    window: str = None,
+    polygon: str = None,
+    max_passes: int = 3,
+    stats_only: bool = False,
+):
+    """Generate a debug visualization showing tile coverage of the detection area."""
+    try:
+        from PIL import Image
+        import cv2
+
+        full_path = get_full_path(path)
+        scan_window = None
+        if window:
+            try:
+                scan_window = json.loads(window)
+            except:
+                pass
+
+        scan_polygon = None
+        if polygon:
+            try:
+                scan_polygon = json.loads(polygon)
+            except:
+                pass
+
+        detector_instance = TreeDetector.__new__(TreeDetector)
+        detector_instance.model_id = "debug"
+        detector_instance.label = "palm_tree"
+
+        coverage_stats = TreeDetector.get_tile_coverage_stats(
+            detector_instance,
+            full_path,
+            tile_size=tile_size,
+            overlap=overlap,
+            scan_window=scan_window,
+            polygon=scan_polygon,
+            max_passes=max_passes,
+        )
+
+        if stats_only:
+            return coverage_stats
+
+        coverage = TreeDetector.get_tile_coverage_map(
+            detector_instance,
+            full_path,
+            tile_size=tile_size,
+            overlap=overlap,
+            scan_window=scan_window,
+            polygon=scan_polygon,
+            max_passes=max_passes,
+        )
+
+        if coverage.size == 0:
+            return {"error": "No coverage data generated"}
+
+        coverage_normalized = cv2.normalize(coverage, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        heatmap = cv2.applyColorMap(coverage_normalized, cv2.COLORMAP_JET)
+
+        if scan_polygon and len(scan_polygon) >= 3:
+            window_info = coverage_stats.get("scan_window") or [0, 0, coverage.shape[1], coverage.shape[0]]
+            start_x = int(window_info[0])
+            start_y = int(window_info[1])
+            poly_arr = np.array(
+                [[int(round(x - start_x)), int(round(y - start_y))] for x, y in scan_polygon],
+                dtype=np.int32,
+            )
+            cv2.polylines(heatmap, [poly_arr], isClosed=True, color=(0, 255, 0), thickness=2)
+
+        _, img_encoded = cv2.imencode('.png', heatmap)
+        return StreamingResponse(
+            BytesIO(img_encoded.tobytes()),
+            media_type="image/png",
+        )
+    except Exception as e:
+        print(f"[COVERAGE-ERROR] {e}")
+        return {"error": str(e)}
 
 
 @app.get("/api/export-dir")
@@ -1039,20 +1296,50 @@ async def import_shapefile(shp_path: str, ref_image: str = None):
 
 
 # Serve static files for React (if built)
-_STATIC_ROOT_DIR = os.path.join(os.path.dirname(__file__), "static")
-_STATIC_DIST_DIR = os.path.join(_STATIC_ROOT_DIR, "dist")
-if os.path.exists(os.path.join(_STATIC_DIST_DIR, "index.html")):
-    app.mount(
-        "/",
-        StaticFiles(directory=_STATIC_DIST_DIR, html=True),
-        name="static",
-    )
-elif os.path.exists(os.path.join(_STATIC_ROOT_DIR, "index.html")):
-    app.mount(
-        "/",
-        StaticFiles(directory=_STATIC_ROOT_DIR, html=True),
-        name="static",
-    )
+_ACTIVE_STATIC_DIR = get_active_static_dir()
+if _ACTIVE_STATIC_DIR:
+    _ASSETS_DIR = os.path.join(_ACTIVE_STATIC_DIR, "assets")
+    if os.path.isdir(_ASSETS_DIR):
+        app.mount(
+            "/assets",
+            StaticFiles(directory=_ASSETS_DIR),
+            name="static-assets",
+        )
+
+    for _filename in ("favicon.svg", "icons.svg"):
+        _file_path = os.path.join(_ACTIVE_STATIC_DIR, _filename)
+        if os.path.isfile(_file_path):
+            async def _serve_static_file(filename: str = _filename, file_path: str = _file_path):
+                return FileResponse(file_path, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
+
+            app.add_api_route(f"/{_filename}", _serve_static_file, methods=["GET"])
+
+    @app.get("/", response_class=HTMLResponse)
+    async def serve_frontend_index():
+        debug_log("FRONTEND", f"serve index dir={_ACTIVE_STATIC_DIR}")
+        return HTMLResponse(
+            content=_build_index_html(_ACTIVE_STATIC_DIR),
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
+
+    @app.get("/{full_path:path}", response_class=HTMLResponse)
+    async def serve_frontend_app(full_path: str):
+        if full_path.startswith("api/") or full_path.startswith("assets/"):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        candidate_path = os.path.join(_ACTIVE_STATIC_DIR, full_path)
+        if os.path.isfile(candidate_path):
+            debug_log("FRONTEND", f"serve file path={candidate_path}")
+            return FileResponse(
+                candidate_path,
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+            )
+
+        debug_log("FRONTEND", f"spa fallback path={full_path} dir={_ACTIVE_STATIC_DIR}")
+        return HTMLResponse(
+            content=_build_index_html(_ACTIVE_STATIC_DIR),
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(D:\\Gawean Rebinmas\\Tree Counting Project\\Training Deteksi Sawit Multi Model\\Dataset/**)"
+    ]
+  }
+}

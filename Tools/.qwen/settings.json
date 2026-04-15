@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(D:\\Gawean Rebinmas\\Tree Counting Project\\Training Deteksi Sawit Multi Model\\Dataset/**)",
+      "Bash(git add *)",
+      "Bash(findstr *)",
+      "Bash(git commit *)",
+      "Bash(git push)"
+    ]
+  },
+  "$version": 3
+}

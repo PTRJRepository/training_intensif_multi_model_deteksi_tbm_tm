@@ -35,6 +35,68 @@ const serializeModelIds = (modelIds?: string[]) => {
   return `&model_ids=${encodeURIComponent(modelIds.join(','))}`;
 };
 
+type FullDetectionUrlParams = {
+  path: string;
+  conf?: number;
+  tileSize?: number;
+  overlap?: number;
+  imgsz?: number;
+  modelIds?: string[];
+  zoomScales?: string;
+  dbscanEps?: number;
+  clusterMethod?: string;
+  maxPasses?: number;
+  minNewPoints?: number;
+  batchSize?: number;
+  inferClass?: 'tbm' | 'tm';
+  polygon?: [number, number][];
+};
+
+export const buildDetectFullUrl = ({
+  path,
+  conf = 0.1,
+  tileSize = 640,
+  overlap = 0.25,
+  imgsz = 640,
+  modelIds,
+  zoomScales,
+  dbscanEps = 12.0,
+  clusterMethod = 'hybrid',
+  maxPasses = 2,
+  minNewPoints = 2,
+  batchSize = 8,
+  inferClass = 'tbm',
+  polygon,
+}: FullDetectionUrlParams) => {
+  const params = new URLSearchParams({
+    path,
+    conf: String(conf),
+    tile_size: String(tileSize),
+    overlap: String(overlap),
+    imgsz: String(imgsz),
+    infer_class: inferClass,
+    dbscan_eps: String(dbscanEps),
+    cluster_method: clusterMethod,
+    max_passes: String(maxPasses),
+    min_new_points: String(minNewPoints),
+    batch_size: String(batchSize),
+  });
+
+  if (modelIds && modelIds.length > 0) {
+    params.set('model_ids', modelIds.join(','));
+  }
+
+  if (zoomScales && zoomScales.trim()) {
+    params.set('zoom_scales', zoomScales.trim());
+  }
+
+  if (polygon && polygon.length > 2) {
+    params.set('polygon', JSON.stringify(polygon));
+  }
+
+  return `${API_BASE}/detect-full?${params.toString()}`;
+};
+
 export const api = {
   getImages: () => axios.get(`${API_BASE}/images`),
   getImageInfo: (path: string) => axios.get(`${API_BASE}/image-info?path=${encodeURIComponent(path)}`),
@@ -63,6 +125,7 @@ export const api = {
     overlap?: number,
     imgsz?: number,
     modelIds?: string[],
+    zoomScales?: string,
     dbscanEps?: number,
     clusterMethod: string = 'hybrid',
     maxPasses: number = 2,
@@ -71,7 +134,21 @@ export const api = {
     inferClass: 'tbm' | 'tm' = 'tbm',
   ) =>
     axios.post(
-      `${API_BASE}/detect-full?path=${encodeURIComponent(path)}&conf=${conf ?? 0.1}&tile_size=${tileSize ?? 640}&overlap=${overlap ?? 0.25}&imgsz=${imgsz ?? 640}&infer_class=${inferClass}&dbscan_eps=${dbscanEps ?? 12.0}&cluster_method=${encodeURIComponent(clusterMethod)}&max_passes=${maxPasses}&min_new_points=${minNewPoints}&batch_size=${batchSize}${serializeModelIds(modelIds)}`
+      buildDetectFullUrl({
+        path,
+        conf,
+        tileSize,
+        overlap,
+        imgsz,
+        modelIds,
+        zoomScales,
+        dbscanEps,
+        clusterMethod,
+        maxPasses,
+        minNewPoints,
+        batchSize,
+        inferClass,
+      })
     ),
   saveLabels: (path: string, labels: any[]) =>
     axios.post(`${API_BASE}/save?path=${encodeURIComponent(path)}`, labels),

@@ -1,0 +1,2 @@
+rank,model_name,model_path,config_id,score,macro_recall,macro_precision,macro_f1,macro_count_accuracy,micro_recall,micro_precision,micro_f1,micro_count_accuracy,total_gt,total_pred,total_count_error,mean_runtime_sec
+1,ft_yolo11s_640_v2,D:\Gawean Rebinmas\Tree Counting Project\Training Deteksi Sawit Multi Model\Train\runs\ft_yolo11s_640_v2\weights\best.pt,conf0.02_tile640_ov0.25_img960_zoom1-1p5-2_hybrid_eps12,0.888148,0.853154,0.850379,0.851765,0.996737,0.853154,0.850379,0.851765,0.996737,2758,2767,9,85.7644
