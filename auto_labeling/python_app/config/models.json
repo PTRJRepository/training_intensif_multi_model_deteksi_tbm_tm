@@ -1,6 +1,96 @@
 {
   "models": [
     {
+      "id": "train_runs_model_v2_yolov26_improved_accuracy_20260418_075309_weights_best",
+      "name": "model_v2_yolov26_improved_accuracy",
+      "path": "Train/runs/model_v2_yolov26_improved_accuracy_20260418_075309/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.02,
+      "imgsz": 960
+    },
+    {
+      "id": "train_runs_model_yolov12_center_fix_weights_best",
+      "name": "yolov12_center_fix",
+      "path": "Train/runs/model_yolov12_center_fix/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.02,
+      "imgsz": 960
+    },
+    {
+      "id": "train_runs__temp_tbm_train_5qlomx1q_model_yolov12_center_fix_weights_best",
+      "name": "yolov12_center_fix_temp",
+      "path": "Train/runs/_temp/tbm_train_5qlomx1q/model_yolov12_center_fix/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.02,
+      "imgsz": 960
+    },
+    {
+      "id": "fine_tuning_model_fine_tunign_high_res_weights_best",
+      "name": "model_fine_tunign_high_res",
+      "path": "Train/fine_tuning/model_fine_tunign_high_res/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.02,
+      "imgsz": 960
+    },
+    {
+      "id": "fine_tuning_model_fine_tunign_high_res_weights_last",
+      "name": "model_fine_tunign_high_res",
+      "path": "Train/fine_tuning/model_fine_tunign_high_res/weights/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": false,
+      "conf": 0.1,
+      "imgsz": 960
+    },
+    {
+      "id": "train_runs_ft2_yolo11s_640_weights_best",
+      "name": "ft2_yolo11s_640",
+      "path": "Train/runs/ft2_yolo11s_640/weights/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.02,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_ft2_yolo11s_640_weights_last",
+      "name": "ft2_yolo11s_640",
+      "path": "Train/runs/ft2_yolo11s_640/weights/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": false,
+      "conf": 0.1,
+      "imgsz": 640
+    },
+    {
+      "id": "train_runs_model_train_highres_best",
+      "name": "Model_train_highres",
+      "path": "Train/runs/Model_train_highres/best.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": true,
+      "conf": 0.02,
+      "imgsz": 960
+    },
+    {
+      "id": "train_runs_model_train_highres_last",
+      "name": "Model_train_highres",
+      "path": "Train/runs/Model_train_highres/last.pt",
+      "label": "tbm",
+      "class_tag": "tbm",
+      "enabled": false,
+      "conf": 0.02,
+      "imgsz": 960
+    },
+    {
       "id": "train_runs_model_fine_tuning_15_04_weights_best",
       "name": "model_fine_tuning_15_04",
       "path": "Train/runs/model_fine_tuning_15_04/weights/best.pt",
